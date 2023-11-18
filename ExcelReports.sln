@@ -1,0 +1,34 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "ExcelReports", "ExcelReports\ExcelReports.fsproj", "{4D2A44F4-FA1D-4710-BD1B-1C5CA9E2E2C6}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Console", "Console\Console.fsproj", "{ED577D13-1823-4706-89B6-63BA5EB2F9CE}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Web", "Web\Web.fsproj", "{9BF2C4A1-6340-49DB-9183-03A2B200A56A}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{4D2A44F4-FA1D-4710-BD1B-1C5CA9E2E2C6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4D2A44F4-FA1D-4710-BD1B-1C5CA9E2E2C6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4D2A44F4-FA1D-4710-BD1B-1C5CA9E2E2C6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4D2A44F4-FA1D-4710-BD1B-1C5CA9E2E2C6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{ED577D13-1823-4706-89B6-63BA5EB2F9CE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{ED577D13-1823-4706-89B6-63BA5EB2F9CE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{ED577D13-1823-4706-89B6-63BA5EB2F9CE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{ED577D13-1823-4706-89B6-63BA5EB2F9CE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9BF2C4A1-6340-49DB-9183-03A2B200A56A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9BF2C4A1-6340-49DB-9183-03A2B200A56A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9BF2C4A1-6340-49DB-9183-03A2B200A56A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9BF2C4A1-6340-49DB-9183-03A2B200A56A}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
