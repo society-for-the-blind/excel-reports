@@ -48,11 +48,55 @@ let saveWorkbook (workbook: XSSFWorkbook) (filePath: string) =
         )
     workbook.Write(fileStream)
 
-let getCellByAddress (workbook: XSSFWorkbook) (sheetIndex: int) (address: string) =
-    let sheet: ISheet = workbook.GetSheetAt(sheetIndex)
-    let cellAddress: CellAddress = new CellAddress(address)
+// TODO move to a utility module
+type ProspectiveCellAddress = {
+    Column: string;
+    Row: int
+}
+
+// TODO move to a utility module
+let maybeCellAddress ({ Column = col; Row = row}: ProspectiveCellAddress) :CellAddress option =
+    let npoiCellAddress = (new CellAddress (col + (string row)))
+    match npoiCellAddress with
+    | _ as c when c.Column = -1 -> None
+    | _ as c -> Some c
+
+// TODO move to a utility module
+let getCellAddressOrThrow : ProspectiveCellAddress -> CellAddress =
+    Option.get << maybeCellAddress
+
+let getCellByAddress (sheet: ISheet) (cellAddress: CellAddress) =
     let row: IRow = sheet.GetRow(cellAddress.Row)
     row.GetCell(cellAddress.Column, MissingCellPolicy.CREATE_NULL_AS_BLANK)
+
+type PasteDirection = | Down | Right // | Up | Left
+
+let enterClients (sheet: ISheet) (startCellAddress: CellAddress) (direction: PasteDirection) =
+    let columnNumber = column.ColumnIndex
+    let rowNumber = column.RowIndex
+    let row: IRow = sheet.GetRow(rowNumber)
+    let cell: ICell = row.GetCell(columnNumber, MissingCellPolicy.CREATE_NULL_AS_BLANK)
+    let cellAddress: CellAddress = new CellAddress(columnName)
+    let rowNumber = cellAddress.Row
+    let columnNumber = cellAddress.Column
+    let row: IRow = sheet.GetRow(rowNumber)
+    let cell: ICell = row.GetCell(columnNumber, MissingCellPolicy.CREATE_NULL_AS_BLANK)
+    let cellStyle = cell.CellStyle
+    let dataValidationHelper = sheet.GetDataValidationHelper()
+    let dataValidationConstraint = dataValidationHelper.CreateExplicitListConstraint(clients |> List.toArray)
+    let dataValidation = dataValidationHelper.CreateValidation(dataValidationConstraint, cellAddress)
+    dataValidation.ShowErrorBox <- true
+    dataValidation.ErrorStyle <- DataValidation.ErrorStyle.STOP
+    dataValidation.CreateErrorBox("Error", "Please select a valid client from the dropdown list.")
+    sheet.AddValidationData(dataValidation)
+    cell.CellStyle <- cellStyle
+
+
+
+
+
+
+
 
 let getSheetDataValidations (workbook: XSSFWorkbook) (sheetIndex: int) =
     let sheet: ISheet = workbook.GetSheetAt(sheetIndex)
@@ -69,7 +113,7 @@ let iterateThroughCellsInWorksheet (sheet: ISheet) (f: ICell -> unit) =
 let lazyIterateThroughCellsInWorksheet (sheet: ISheet) (f: ICell -> unit) =
     let rows = sheet.GetRowEnumerator()
     let rowSeq =
-        Seq.unfold 
+        Seq.unfold
             (fun (enumerator: System.Collections.IEnumerator) ->
                 if enumerator.MoveNext()
                 then Some(enumerator.Current :?> IRow, enumerator)
