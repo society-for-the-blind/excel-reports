@@ -149,9 +149,104 @@ let findDataValidationByCellAddress (workbook: XSSFWorkbook) (sheetNumber: int) 
 open Npgsql.FSharp
 
 let connectionString = "postgres://postgres:XntSrCoEEZtiacZrx2m7jR5htEoEfYyoKncfhNmnPrLqPzxXTU5nxM@192.168.64.4:5432/lynx"
-let q = connectionString |> Sql.connect |> Sql.query "select * from lynx_sipnote where id = 27555;" |> Sql.execute (fun read -> read.text "note")
+let qtestodelete = connectionString |> Sql.connect |> Sql.query "select * from lynx_sipnote where id = 27555;" |> Sql.execute (fun (read: RowReader) -> read.text "note")
 
+type OIBRow = {
+    LastName: string;
+    FirstName: string;
+    MiddleName: string option;
+    ATDevices: bool;
+    Orientation: bool;
+    DLS: bool;
+    Communications: bool;
+    Advocacy: bool;
+    Counseling: bool;
+    Information: bool;
+    Support: bool;
+    PlanName: string;
+    ATOutcomes: string option;
+    CommunityPlanProgress: string option;
+    ILSOutcomes: string option;
+    LivingPlanProgress: string option;
+    NoteDate: System.DateOnly
+}
 
+let queryColumns =
+ "c.last_name, c.first_name, c.middle_name, n.at_devices, n.orientation, n.dls, n.communications, n.advocacy, n.counseling, n.information, n.support, p.plan_name, p.at_outcomes, p.community_plan_progress, p.ila_outcomes, p.living_plan_progress, n.note_date"
+
+let joins = """
+     lynx_sipnote AS n
+JOIN lynx_contact AS c ON n.contact_id = c.id
+JOIN lynx_sipplan AS p ON n.sip_plan_id = p.id
+"""
+
+let baseSelect = "SELECT " + queryColumns + " FROM " + joins
+
+// TODO 2023-11-28_2107
+// Convert to function that takes a from and to date. The format matters
+// so it should probably be a constrained type.
+let whereClause = "WHERE n.note_date >= '2022-10-01'::date AND n.note_date < '2023-10-01'::date"
+
+let groupByClause = "GROUP BY " + queryColumns
+
+let orderByClause = "ORDER BY CONCAT(c.last_name, ', ', c.first_name)"
+
+let query = $"{baseSelect} {whereClause} {groupByClause} {orderByClause}"
+
+let q = connectionString |> Sql.connect |> Sql.query query
+
+let exeReader (read: RowReader) : OIBRow =
+    {
+        LastName = read.text "last_name";
+        FirstName = read.text "first_name";
+        MiddleName = read.textOrNone "middle_name";
+        ATDevices = read.bool "at_devices";
+        Orientation = read.bool "orientation";
+        DLS = read.bool "dls";
+        Communications = read.bool "communications";
+        Advocacy = read.bool "advocacy";
+        Counseling = read.bool "counseling";
+        Information = read.bool "information";
+        Support = read.bool "support";
+        PlanName = read.text "plan_name";
+        ATOutcomes = read.textOrNone "at_outcomes";
+        CommunityPlanProgress = read.textOrNone "community_plan_progress";
+        ILSOutcomes = read.textOrNone "ila_outcomes";
+        LivingPlanProgress = read.textOrNone "living_plan_progress";
+        NoteDate = read.dateOnly "note_date"
+    }
+
+let res = q |> Sql.execute exeReader
+
+// === SqlHydra EXPERIMENTS ===
+// User ID=postgres;Password=XntSrCoEEZtiacZrx2m7jR5htEoEfYyoKncfhNmnPrLqPzxXTU5nxM;Host=192.168.64.4;Port=5432;Database=lynx;
+
+// $ dotnet fsi
+// Microsoft (R) F# Interactive version 12.8.0.0 for F# 8.0
+// Copyright (c) Microsoft Corporation. All Rights Reserved.
+
+// For help type #help;;
+
+// >  #r "nuget: Npgsql.FSharp, 5.7.0";;
+// [Loading /Users/toraritte/.packagemanagement/nuget/Cache/697d8ca5b71fe39e0b2bf72bb58c700d58b82d6d086bcfc1fa356cce2708e407.fsx]
+// module FSI_0003.
+//        697d8ca5b71fe39e0b2bf72bb58c700d58b82d6d086bcfc1fa356cce2708e407
+
+// > #r "nuget: SqlHydra.Query, 2.2.1";;
+// [Loading /Users/toraritte/.packagemanagement/nuget/Cache/177be160dcb44a4a927d2619eda16eee3526dd5810c7ef37a6d4f9fd4544ce0d.fsx]
+// module FSI_0002.
+//        177be160dcb44a4a927d2619eda16eee3526dd5810c7ef37a6d4f9fd4544ce0d
+
+// > #r "nuget: SqlHydra.Cli, 2.3.0";;
+
+// /Users/toraritte/dev/clones/dotNET/slate-excel-reports/stdin(1,1): error FS0999: /Users/toraritte/.packagemanagement/nuget/Projects/85296--b0cee205-014b-423f-951e-e8bd674cb3f1/Proje
+// ct.fsproj : error NU1202: Package SqlHydra.Cli 2.3.0 is not compatible with net8.0 (.NETCoreApp,Version=v8.0). Package SqlHydra.Cli 2.3.0 supports:
+
+// > #r "nuget: SqlHydra.Cli, 2.3.1";;
+
+// /Users/toraritte/dev/clones/dotNET/slate-excel-reports/stdin(1,1): error FS0999: /Users/toraritte/.packagemanagement/nuget/Projects/85296--b0cee205-014b-423f-951e-e8bd674cb3f1/Proje
+// ct.fsproj : error NU1202: Package SqlHydra.Cli 2.3.1 is not compatible with net8.0 (.NETCoreApp,Version=v8.0). Package SqlHydra.Cli 2.3.1 supports:
+// ====================
 
 // type PasteDirection = | Down | Right // | Up | Left
 

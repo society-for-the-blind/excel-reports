@@ -1,16 +1,16 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
-
   <ItemGroup>
+    <Compile Include="ExcelReportsSQL.fs">
+      <Visible>False</Visible>
+    </Compile>
     <Compile Include="Library.fs" />
   </ItemGroup>
-
   <ItemGroup>
+    <PackageReference Include="Npgsql.FSharp" Version="5.7.0" />
     <PackageReference Include="NPOI" Version="2.6.2" />
   </ItemGroup>
-
 </Project>
