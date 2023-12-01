@@ -148,9 +148,6 @@ let findDataValidationByCellAddress (workbook: XSSFWorkbook) (sheetNumber: int) 
 // #r "nuget: SqlHydra.Query, 2.2.1";;
 open Npgsql.FSharp
 
-let connectionString = "postgres://postgres:XntSrCoEEZtiacZrx2m7jR5htEoEfYyoKncfhNmnPrLqPzxXTU5nxM@192.168.64.4:5432/lynx"
-let qtestodelete = connectionString |> Sql.connect |> Sql.query "select * from lynx_sipnote where id = 27555;" |> Sql.execute (fun (read: RowReader) -> read.text "note")
-
 type OIBRow = {
     LastName: string;
     FirstName: string;
@@ -171,52 +168,60 @@ type OIBRow = {
     NoteDate: System.DateOnly
 }
 
-let queryColumns =
- "c.last_name, c.first_name, c.middle_name, n.at_devices, n.orientation, n.dls, n.communications, n.advocacy, n.counseling, n.information, n.support, p.plan_name, p.at_outcomes, p.community_plan_progress, p.ila_outcomes, p.living_plan_progress, n.note_date"
+// TODO 2023-12-01_1342
+//      Remove the hard-coded password.
+let connectionString = "postgres://postgres:XntSrCoEEZtiacZrx2m7jR5htEoEfYyoKncfhNmnPrLqPzxXTU5nxM@192.168.64.4:5432/lynx"
 
-let joins = """
-     lynx_sipnote AS n
-JOIN lynx_contact AS c ON n.contact_id = c.id
-JOIN lynx_sipplan AS p ON n.sip_plan_id = p.id
-"""
+// let qtestodelete = connectionString |> Sql.connect |> Sql.query "select * from lynx_sipnote where id = 27555;" |> Sql.execute (fun (read: RowReader) -> read.text "note")
 
-let baseSelect = "SELECT " + queryColumns + " FROM " + joins
+let oibQuery (connectionString: string) (grantYear: int) : OIBRow list =
 
-// TODO 2023-11-28_2107
-// Convert to function that takes a from and to date. The format matters
-// so it should probably be a constrained type.
-let whereClause = "WHERE n.note_date >= '2022-10-01'::date AND n.note_date < '2023-10-01'::date"
+    let queryColumns =
+        "c.last_name, c.first_name, c.middle_name, i.intake_date, n.at_devices, n.orientation, n.dls, n.communications, n.advocacy, n.counseling, n.information, n.support, p.plan_name, p.at_outcomes, p.community_plan_progress, p.ila_outcomes, p.living_plan_progress, n.note_date"
 
-let groupByClause = "GROUP BY " + queryColumns
+    let joins = """
+        lynx_sipnote AS n
+    JOIN lynx_contact AS c ON n.contact_id = c.id
+    JOIN lynx_sipplan AS p ON n.sip_plan_id = p.id
+    JOIN lynx_intake  AS i ON i.contact_id = c.id
+    """
 
-let orderByClause = "ORDER BY CONCAT(c.last_name, ', ', c.first_name)"
+    let baseSelect = "SELECT " + queryColumns + " FROM " + joins
 
-let query = $"{baseSelect} {whereClause} {groupByClause} {orderByClause}"
+    let whereClause = $"WHERE n.note_date >= '{string i}-10-01'::date AND n.note_date < '{string (i+1)}-10-01'::date"
 
-let q = connectionString |> Sql.connect |> Sql.query query
+    // NOTE 2023-12-01_1347 Should be irrelevant.
+    // let groupByClause = "GROUP BY " + queryColumns
+    // let orderByClause = "ORDER BY CONCAT(c.last_name, ', ', c.first_name)"
 
-let exeReader (read: RowReader) : OIBRow =
-    {
-        LastName = read.text "last_name";
-        FirstName = read.text "first_name";
-        MiddleName = read.textOrNone "middle_name";
-        ATDevices = read.bool "at_devices";
-        Orientation = read.bool "orientation";
-        DLS = read.bool "dls";
-        Communications = read.bool "communications";
-        Advocacy = read.bool "advocacy";
-        Counseling = read.bool "counseling";
-        Information = read.bool "information";
-        Support = read.bool "support";
-        PlanName = read.text "plan_name";
-        ATOutcomes = read.textOrNone "at_outcomes";
-        CommunityPlanProgress = read.textOrNone "community_plan_progress";
-        ILSOutcomes = read.textOrNone "ila_outcomes";
-        LivingPlanProgress = read.textOrNone "living_plan_progress";
-        NoteDate = read.dateOnly "note_date"
-    }
+    let query = $"{baseSelect} {whereClause}" // + "{groupByClause} {orderByClause}"
 
-let res = q |> Sql.execute exeReader
+
+    let exeReader (read: RowReader) : OIBRow =
+        {
+            LastName = read.text "last_name";
+            FirstName = read.text "first_name";
+            MiddleName = read.textOrNone "middle_name";
+            ATDevices = read.bool "at_devices";
+            Orientation = read.bool "orientation";
+            DLS = read.bool "dls";
+            Communications = read.bool "communications";
+            Advocacy = read.bool "advocacy";
+            Counseling = read.bool "counseling";
+            Information = read.bool "information";
+            Support = read.bool "support";
+            PlanName = read.text "plan_name";
+            ATOutcomes = read.textOrNone "at_outcomes";
+            CommunityPlanProgress = read.textOrNone "community_plan_progress";
+            ILSOutcomes = read.textOrNone "ila_outcomes";
+            LivingPlanProgress = read.textOrNone "living_plan_progress";
+            NoteDate = read.dateOnly "note_date"
+        }
+
+    connectionString
+    |> Sql.connect
+    |> Sql.query query
+    |> Sql.execute exeReader
 
 // === SqlHydra EXPERIMENTS ===
 // User ID=postgres;Password=XntSrCoEEZtiacZrx2m7jR5htEoEfYyoKncfhNmnPrLqPzxXTU5nxM;Host=192.168.64.4;Port=5432;Database=lynx;
