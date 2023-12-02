@@ -143,52 +143,106 @@ let findDataValidationByCellAddress (workbook: XSSFWorkbook) (sheetNumber: int) 
 //     (firstCellRow <= cellRow && cellRow <= lastCellRow) &&
 //     (firstCellColumn <= cellColumn && cellColumn <= lastCellColumn)
 
+open System
+open System.Reflection
+
+type OIBQueryColumn = {
+    ColumnName : string;
+    ColumnType : Type;
+}
+
+let getRecordFieldNamesAndTypes<'T> () =
+    // NOTE 2023-12-01_2227
+    // The last character of the field name was "@" in all my
+    // experiments, so decided to get sloppy and just remove the last
+    // char instead of checking for it.
+    let delLastChar (str: string) : string =
+        str.Substring(0, str.Length - 1)
+    typeof<'T>.GetFields(BindingFlags.Public ||| BindingFlags.Instance)
+    |> Array.map (fun field -> (delLastChar field.Name, field.FieldType)
+
+let toOIBQueryColumn (field: FieldInfo) : OIBQueryColumn =
+    {
+        ColumnName = field.Name;
+        ColumnType = field.FieldType;
+    }
+
+let columnTypetoRowRowReaderMember 
+
+// let fieldNamesAndTypes = getRecordFieldNamesAndTypes<OIBRow>()
 
 // #r "nuget: Npgsql.FSharp, 5.7.0"
 // #r "nuget: SqlHydra.Query, 2.2.1";;
 open Npgsql.FSharp
 
-type OIBRow = {
-    LastName: string;
-    FirstName: string;
-    MiddleName: string option;
-    ATDevices: bool;
-    Orientation: bool;
-    DLS: bool;
-    Communications: bool;
-    Advocacy: bool;
-    Counseling: bool;
-    Information: bool;
-    Support: bool;
-    PlanName: string;
-    ATOutcomes: string option;
-    CommunityPlanProgress: string option;
-    ILSOutcomes: string option;
-    LivingPlanProgress: string option;
-    NoteDate: System.DateOnly
-}
-
 // TODO 2023-12-01_1342
 //      Remove the hard-coded password.
 let connectionString = "postgres://postgres:XntSrCoEEZtiacZrx2m7jR5htEoEfYyoKncfhNmnPrLqPzxXTU5nxM@192.168.64.4:5432/lynx"
 
+type OIBRow = {
+    contact_id          : int;
+    contact_last_name   : string;
+    contact_first_name  : string;
+    contact_middle_name : string;
+
+    intake_intake_date  : System.DateOnly;
+
+    note_at_devices     : bool;
+    note_orientation    : bool;
+    note_dls            : bool;
+    note_communications : bool;
+    note_advocacy       : bool;
+    note_counseling     : bool;
+    note_information    : bool;
+    note_support        : bool;
+    note_note_date      : System.DateOnly;
+
+    plan_plan_name               : string;
+    plan_at_outcomes             : string option;
+    plan_community_plan_progress : string option;
+    plan_ila_outcomes            : string option;
+    plan_living_plan_progress    : string option;
+}
+
 // let qtestodelete = connectionString |> Sql.connect |> Sql.query "select * from lynx_sipnote where id = 27555;" |> Sql.execute (fun (read: RowReader) -> read.text "note")
 
-let oibQuery (connectionString: string) (grantYear: int) : OIBRow list =
+// let oibQuery (connectionString: string) (grantYear: int) : OIBRow list =
+let oibQuery (connectionString: string) (grantYear: int) =
 
     let queryColumns =
-        "c.last_name, c.first_name, c.middle_name, i.intake_date, n.at_devices, n.orientation, n.dls, n.communications, n.advocacy, n.counseling, n.information, n.support, p.plan_name, p.at_outcomes, p.community_plan_progress, p.ila_outcomes, p.living_plan_progress, n.note_date"
+contact_id          : int;
+contact_last_name   : string;
+contact_first_name  : string;
+contact_middle_name : string;
+
+intake_intake_date  : System.DateOnly;
+
+note_at_devices     : bool;
+note_orientation    : bool;
+note_dls            : bool;
+note_communications : bool;
+note_advocacy       : bool;
+note_counseling     : bool;
+note_information    : bool;
+note_support        : bool;
+note_note_date      : System.DateOnly;
+
+plan_plan_name               : string;
+plan_at_outcomes             : string option;
+plan_community_plan_progress : string option;
+plan_ila_outcomes            : string option;
+plan_living_plan_progress    : string option;
 
     let joins = """
-        lynx_sipnote AS n
-    JOIN lynx_contact AS c ON n.contact_id = c.id
-    JOIN lynx_sipplan AS p ON n.sip_plan_id = p.id
-    JOIN lynx_intake  AS i ON i.contact_id = c.id
+         lynx_sipnote AS note
+    JOIN lynx_contact AS contact ON   note.contact_id = contact.id
+    JOIN lynx_sipplan AS plan    ON  note.sip_plan_id = plan.id
+    JOIN lynx_intake  AS intake  ON intake.contact_id = contact.id
     """
 
     let baseSelect = "SELECT " + queryColumns + " FROM " + joins
 
-    let whereClause = $"WHERE n.note_date >= '{string i}-10-01'::date AND n.note_date < '{string (i+1)}-10-01'::date"
+    let whereClause = $"WHERE n.note_date >= '{string grantYear}-10-01'::date AND n.note_date < '{string (grantYear+1)}-10-01'::date"
 
     // NOTE 2023-12-01_1347 Should be irrelevant.
     // let groupByClause = "GROUP BY " + queryColumns
@@ -196,9 +250,9 @@ let oibQuery (connectionString: string) (grantYear: int) : OIBRow list =
 
     let query = $"{baseSelect} {whereClause}" // + "{groupByClause} {orderByClause}"
 
-
     let exeReader (read: RowReader) : OIBRow =
         {
+            ContactID = read.int "id";
             LastName = read.text "last_name";
             FirstName = read.text "first_name";
             MiddleName = read.textOrNone "middle_name";
@@ -221,7 +275,7 @@ let oibQuery (connectionString: string) (grantYear: int) : OIBRow list =
     connectionString
     |> Sql.connect
     |> Sql.query query
-    |> Sql.execute exeReader
+    // |> Sql.execute exeReader
 
 // === SqlHydra EXPERIMENTS ===
 // User ID=postgres;Password=XntSrCoEEZtiacZrx2m7jR5htEoEfYyoKncfhNmnPrLqPzxXTU5nxM;Host=192.168.64.4;Port=5432;Database=lynx;
