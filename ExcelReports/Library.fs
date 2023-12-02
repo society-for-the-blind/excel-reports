@@ -151,23 +151,41 @@ type OIBQueryColumn = {
     ColumnType : Type;
 }
 
-let getRecordFieldNamesAndTypes<'T> () =
+let getRecordFieldNamesAndTypes<'T, 'U> (mapper: FieldInfo -> 'U) =
+    typeof<'T>.GetFields(BindingFlags.Public ||| BindingFlags.Instance)
+    |> Array.map mapper
+
+let replaceFirstOccurrence (str: string) (oldValue: char, newValue: char) =
+    let index = str.IndexOf(oldValue)
+    if index >= 0 then
+        str.Remove(index, 1).Insert(index, newValue.ToString())
+    else
+        str
+
+let flip (f: 'a -> 'b -> 'c) (x: 'b) (y: 'a) = f y x
+
+let typeToRowReaderMember (t: Type) =
+    match t with
+    | _ when t = typeof<int> -> "int"
+    | _ when t = typeof<string> -> "text"
+    | _ when t = typeof<bool> -> "bool"
+    | _ when t = typeof<System.DateOnly> -> "dateOnly"
+    | _ when t.FullName.Contains("Option") &&
+             t.FullName.Contains("String") -> "textOrNone"
+    | _ -> failwith "NOT IMPLEMENTED: Type not supported."
+
+let toOIBQueryColumn (fieldInfo: FieldInfo) : OIBQueryColumn =
     // NOTE 2023-12-01_2227
     // The last character of the field name was "@" in all my
     // experiments, so decided to get sloppy and just remove the last
     // char instead of checking for it.
     let delLastChar (str: string) : string =
         str.Substring(0, str.Length - 1)
-    typeof<'T>.GetFields(BindingFlags.Public ||| BindingFlags.Instance)
-    |> Array.map (fun field -> (delLastChar field.Name, field.FieldType)
 
-let toOIBQueryColumn (field: FieldInfo) : OIBQueryColumn =
     {
-        ColumnName = field.Name;
-        ColumnType = field.FieldType;
+        ColumnName = fieldInfo.Name |> delLastChar |> (flip replaceFirstOccurrence) ('_', '.');
+        ColumnType = fieldInfo.FieldType;
     }
-
-let columnTypetoRowRowReaderMember 
 
 // let fieldNamesAndTypes = getRecordFieldNamesAndTypes<OIBRow>()
 
@@ -210,28 +228,11 @@ type OIBRow = {
 let oibQuery (connectionString: string) (grantYear: int) =
 
     let queryColumns =
-contact_id          : int;
-contact_last_name   : string;
-contact_first_name  : string;
-contact_middle_name : string;
-
-intake_intake_date  : System.DateOnly;
-
-note_at_devices     : bool;
-note_orientation    : bool;
-note_dls            : bool;
-note_communications : bool;
-note_advocacy       : bool;
-note_counseling     : bool;
-note_information    : bool;
-note_support        : bool;
-note_note_date      : System.DateOnly;
-
-plan_plan_name               : string;
-plan_at_outcomes             : string option;
-plan_community_plan_progress : string option;
-plan_ila_outcomes            : string option;
-plan_living_plan_progress    : string option;
+        getRecordFieldNamesAndTypes<OIBRow>
+        |> Array.map (fun (fieldName, fieldType) ->
+            fieldName + " AS " + fieldName.Replace("_", "")
+        )
+        |> String.concat ", "
 
     let joins = """
          lynx_sipnote AS note
@@ -251,6 +252,16 @@ plan_living_plan_progress    : string option;
     let query = $"{baseSelect} {whereClause}" // + "{groupByClause} {orderByClause}"
 
     let exeReader (read: RowReader) : OIBRow =
+
+        // open System.Reflection
+
+        // let callMethodDynamically (instance: obj) (methodName: string) (args: obj[]) =
+        //     let methodInfo = instance.GetType().GetMethod(methodName)
+        //     methodInfo.Invoke(instance, args)
+
+        // let read = ... // Your RowReader instance
+        // let result = callMethodDynamically read "bool" [| "your_column_name" |]
+
         {
             ContactID = read.int "id";
             LastName = read.text "last_name";
