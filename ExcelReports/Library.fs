@@ -143,10 +143,12 @@ let findDataValidationByCellAddress (workbook: XSSFWorkbook) (sheetNumber: int) 
 //     (firstCellRow <= cellRow && cellRow <= lastCellRow) &&
 //     (firstCellColumn <= cellColumn && cellColumn <= lastCellColumn)
 
+
+// #r "nuget: Npgsql.FSharp, 5.7.0";;
 open System
 open System.Reflection
 
-type OIBQueryColumn = {
+type OIBColumn = {
     ColumnName : string;
     ColumnType : Type;
 }
@@ -164,6 +166,13 @@ let replaceFirstOccurrence (str: string) (oldValue: char, newValue: char) =
 
 let flip (f: 'a -> 'b -> 'c) (x: 'b) (y: 'a) = f y x
 
+// type RowReaderMember =
+// | Int of int
+// | Text of string
+// | Bool of bool
+// | DateOnly of System.DateOnly
+// | TextOrNone of string option
+
 let typeToRowReaderMember (t: Type) =
     match t with
     | _ when t = typeof<int> -> "int"
@@ -174,7 +183,7 @@ let typeToRowReaderMember (t: Type) =
              t.FullName.Contains("String") -> "textOrNone"
     | _ -> failwith "NOT IMPLEMENTED: Type not supported."
 
-let toOIBQueryColumn (fieldInfo: FieldInfo) : OIBQueryColumn =
+let toOIBColumn (fieldInfo: FieldInfo) : OIBColumn =
     // NOTE 2023-12-01_2227
     // The last character of the field name was "@" in all my
     // experiments, so decided to get sloppy and just remove the last
@@ -183,15 +192,23 @@ let toOIBQueryColumn (fieldInfo: FieldInfo) : OIBQueryColumn =
         str.Substring(0, str.Length - 1)
 
     {
-        ColumnName = fieldInfo.Name |> delLastChar |> (flip replaceFirstOccurrence) ('_', '.');
+        ColumnName = fieldInfo.Name |> delLastChar
         ColumnType = fieldInfo.FieldType;
     }
+
+let deleteUpToFirstUnderscore (str: string) =
+    let index = str.IndexOf('_')
+    if index >= 0 then
+        str.Substring(index + 1)
+    else
+        str
 
 // let fieldNamesAndTypes = getRecordFieldNamesAndTypes<OIBRow>()
 
 // #r "nuget: Npgsql.FSharp, 5.7.0"
 // #r "nuget: SqlHydra.Query, 2.2.1";;
 open Npgsql.FSharp
+open System.Reflection
 
 // TODO 2023-12-01_1342
 //      Remove the hard-coded password.
@@ -201,9 +218,12 @@ type OIBRow = {
     contact_id          : int;
     contact_last_name   : string;
     contact_first_name  : string;
-    contact_middle_name : string;
+    contact_middle_name : string option;
 
     intake_intake_date  : System.DateOnly;
+    intake_birth_date   : System.DateOnly;
+    intake_gender       : string;
+    intake_ethnicity    : string;
 
     note_at_devices     : bool;
     note_orientation    : bool;
@@ -227,11 +247,14 @@ type OIBRow = {
 // let oibQuery (connectionString: string) (grantYear: int) : OIBRow list =
 let oibQuery (connectionString: string) (grantYear: int) =
 
+    let (oibCols: OIBColumn array) =
+        getRecordFieldNamesAndTypes<OIBRow,OIBColumn> toOIBColumn
+
+    // SELECT columns generated from OIBRow type.
     let queryColumns =
-        getRecordFieldNamesAndTypes<OIBRow>
-        |> Array.map (fun (fieldName, fieldType) ->
-            fieldName + " AS " + fieldName.Replace("_", "")
-        )
+        oibCols
+        |> Array.map (fun { ColumnName = n; ColumnType = _ } ->
+           replaceFirstOccurrence n ('_', '.');)
         |> String.concat ", "
 
     let joins = """
@@ -243,7 +266,7 @@ let oibQuery (connectionString: string) (grantYear: int) =
 
     let baseSelect = "SELECT " + queryColumns + " FROM " + joins
 
-    let whereClause = $"WHERE n.note_date >= '{string grantYear}-10-01'::date AND n.note_date < '{string (grantYear+1)}-10-01'::date"
+    let whereClause = $"WHERE note.note_date >= '{string grantYear}-10-01'::date AND note.note_date < '{string (grantYear+1)}-10-01'::date"
 
     // NOTE 2023-12-01_1347 Should be irrelevant.
     // let groupByClause = "GROUP BY " + queryColumns
@@ -253,40 +276,34 @@ let oibQuery (connectionString: string) (grantYear: int) =
 
     let exeReader (read: RowReader) : OIBRow =
 
-        // open System.Reflection
+        let callMethodDynamically (instance: obj) (methodName: string) (args: obj[]) =
+            let methodInfo = instance.GetType().GetMethod(methodName)
+            methodInfo.Invoke(instance, args)
 
-        // let callMethodDynamically (instance: obj) (methodName: string) (args: obj[]) =
-        //     let methodInfo = instance.GetType().GetMethod(methodName)
-        //     methodInfo.Invoke(instance, args)
+        let oibRowType = typeof<OIBRow>
+        let constructor = oibRowType.GetConstructors().[0]
+        let constructorArgs =
+            oibCols
+            |> Array.map (fun {ColumnName = n; ColumnType = t} ->
+                n
+                |> deleteUpToFirstUnderscore
+                |> fun columnName -> [| box columnName |]
+                |> callMethodDynamically read (typeToRowReaderMember t)
+                |> box
+            )
 
-        // let read = ... // Your RowReader instance
-        // let result = callMethodDynamically read "bool" [| "your_column_name" |]
+        constructor.Invoke(constructorArgs) :?> OIBRow
 
-        {
-            ContactID = read.int "id";
-            LastName = read.text "last_name";
-            FirstName = read.text "first_name";
-            MiddleName = read.textOrNone "middle_name";
-            ATDevices = read.bool "at_devices";
-            Orientation = read.bool "orientation";
-            DLS = read.bool "dls";
-            Communications = read.bool "communications";
-            Advocacy = read.bool "advocacy";
-            Counseling = read.bool "counseling";
-            Information = read.bool "information";
-            Support = read.bool "support";
-            PlanName = read.text "plan_name";
-            ATOutcomes = read.textOrNone "at_outcomes";
-            CommunityPlanProgress = read.textOrNone "community_plan_progress";
-            ILSOutcomes = read.textOrNone "ila_outcomes";
-            LivingPlanProgress = read.textOrNone "living_plan_progress";
-            NoteDate = read.dateOnly "note_date"
-        }
+        // {
+        //     ContactID = read.int "id";
+        //     LastName = read.text "last_name";
+        //     ...
+        // }
 
     connectionString
     |> Sql.connect
     |> Sql.query query
-    // |> Sql.execute exeReader
+    |> Sql.execute exeReader
 
 // === SqlHydra EXPERIMENTS ===
 // User ID=postgres;Password=XntSrCoEEZtiacZrx2m7jR5htEoEfYyoKncfhNmnPrLqPzxXTU5nxM;Host=192.168.64.4;Port=5432;Database=lynx;
