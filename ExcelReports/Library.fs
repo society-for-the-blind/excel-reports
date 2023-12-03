@@ -220,10 +220,42 @@ type OIBRow = {
     contact_first_name  : string;
     contact_middle_name : string option;
 
-    intake_intake_date  : System.DateOnly;
-    intake_birth_date   : System.DateOnly;
-    intake_gender       : string;
-    intake_ethnicity    : string;
+    intake_intake_date         : System.DateOnly;
+    intake_birth_date          : System.DateOnly;
+    intake_gender              : string option;
+    intake_ethnicity           : string option; // race AND ethnicity
+    intake_degree              : string option; // degree of visual impairment
+    intake_eye_condition       : string option; // major cause of visual impairment
+    intake_hearing_loss        : bool;          // hearing impairment
+    intake_mobility            : bool;          // mobility impairment
+    intake_communication       : bool;          // communication impairment
+    intake_stroke              : bool;          // |
+    intake_seizure             : bool;          // |
+    intake_alzheimers          : bool;          // | // cognitive or intellectual impairment
+    intake_memory_loss         : bool;          // | // other impairment
+    intake_learning_disability : bool;          // |
+    intake_migraine            : bool;          // | TODO 2023-12-02_2157 talk to Shane how to untangle this
+    intake_heart               : bool;          // |                      and what belongs to other impairments
+    intake_diabetes            : bool;          // |
+    intake_dialysis            : bool;          // |
+    intake_cancer              : bool;          // |
+    intake_arthritis           : bool;          // |
+    intake_high_bp             : bool;          // |
+    intake_neuropathy          : bool;          // |
+    intake_pain                : bool;          // |
+    intake_asthma              : bool;          // |
+    intake_musculoskeletal     : bool;          // |
+    intake_substance_abuse     : bool;          // |
+    intake_allergies           : string option; // | !!!
+    intake_geriatric           : bool;          // |
+    intake_dexterity           : bool;          // |
+    intake_residence_type      : string option; // | // type of residence
+    intake_referred_by         : string option; // | // source of referral
+
+    // TODO 2023-12-02_2153
+    // This is a boolean in the OIB report, so I guess that when this is
+    // not null, then it should be true.
+    intake_mental_health       : string option // mental health impairment
 
     note_at_devices     : bool;
     note_orientation    : bool;
