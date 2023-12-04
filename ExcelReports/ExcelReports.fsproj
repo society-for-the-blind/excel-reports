@@ -4,9 +4,8 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="ExcelReportsSQL.fs">
-      <Visible>False</Visible>
-    </Compile>
+    <Compile Include="LynxData.fs" />
+    <Compile Include="ExcelFunctions.fs" />
     <Compile Include="Library.fs" />
   </ItemGroup>
   <ItemGroup>
