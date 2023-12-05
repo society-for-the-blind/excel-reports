@@ -4,6 +4,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="OIBTypes.fs" />
     <Compile Include="LynxData.fs" />
     <Compile Include="ExcelFunctions.fs" />
     <Compile Include="Library.fs" />
