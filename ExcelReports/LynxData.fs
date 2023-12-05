@@ -6,21 +6,10 @@ open System
 open System.Reflection
 open Npgsql.FSharp
 
-type OIBColumn = {
+type LynxColumn = {
     ColumnName : string;
     ColumnType : Type;
 }
-
-let getRecordFieldNamesAndTypes<'T, 'U> (mapper: FieldInfo -> 'U) =
-    typeof<'T>.GetFields(BindingFlags.Public ||| BindingFlags.Instance)
-    |> Array.map mapper
-
-let replaceFirstOccurrence (str: string) (oldValue: char, newValue: char) =
-    let index = str.IndexOf(oldValue)
-    if index >= 0 then
-        str.Remove(index, 1).Insert(index, newValue.ToString())
-    else
-        str
 
 let flip (f: 'a -> 'b -> 'c) (x: 'b) (y: 'a) = f y x
 
@@ -41,7 +30,7 @@ let typeToRowReaderMember (t: Type) =
              t.FullName.Contains("String") -> "textOrNone"
     | _ -> failwith "NOT IMPLEMENTED: Type not supported."
 
-let toOIBColumn (fieldInfo: FieldInfo) : OIBColumn =
+let toLynxColumn (fieldInfo: FieldInfo) : LynxColumn =
     // NOTE 2023-12-01_2227
     // The last character of the field name was "@" in all my
     // experiments, so decided to get sloppy and just remove the last
@@ -61,13 +50,13 @@ let deleteUpToFirstUnderscore (str: string) =
     else
         str
 
-// let fieldNamesAndTypes = getRecordFieldNamesAndTypes<OIBRow>()
+// let fieldNamesAndTypes = getRecordFieldNamesAndTypes<LynxRow>()
 
 // TODO 2023-12-01_1342
 //      Remove the hard-coded password.
 let connectionString = "postgres://postgres:XntSrCoEEZtiacZrx2m7jR5htEoEfYyoKncfhNmnPrLqPzxXTU5nxM@192.168.64.4:5432/lynx"
 
-type OIBRow = {
+type LynxRow = {
     contact_id          : int;
     contact_last_name   : string;
     contact_first_name  : string;
@@ -133,17 +122,27 @@ type OIBRow = {
     plan_living_plan_progress    : string option;
 }
 
+let getRecordFieldNamesAndTypes<'T, 'U> (mapper: FieldInfo -> 'U) =
+    typeof<'T>.GetFields(BindingFlags.Public ||| BindingFlags.Instance)
+    |> Array.map mapper
+
 // let qtestodelete = connectionString |> Sql.connect |> Sql.query "select * from lynx_sipnote where id = 27555;" |> Sql.execute (fun (read: RowReader) -> read.text "note")
 
-// let oibQuery (connectionString: string) (grantYear: int) : OIBRow list =
-let oibQuery (connectionString: string) (grantYear: int) =
+let lynxQuery (connectionString: string) (grantYear: int) =
 
-    let (oibCols: OIBColumn array) =
-        getRecordFieldNamesAndTypes<OIBRow,OIBColumn> toOIBColumn
+    let (lynxCols: LynxColumn array) =
+        getRecordFieldNamesAndTypes<LynxRow,LynxColumn> toLynxColumn
 
-    // SELECT columns generated from OIBRow type.
+    let replaceFirstOccurrence (str: string) (oldValue: char, newValue: char) =
+        let index = str.IndexOf(oldValue)
+        if index >= 0 then
+            str.Remove(index, 1).Insert(index, newValue.ToString())
+        else
+            str
+
+    // SELECT columns generated from LynxRow type.
     let queryColumns =
-        oibCols
+        lynxCols
         |> Array.map (fun { ColumnName = n; ColumnType = _ } ->
            replaceFirstOccurrence n ('_', '.');)
         |> String.concat ", "
@@ -165,16 +164,16 @@ let oibQuery (connectionString: string) (grantYear: int) =
 
     let query = $"{baseSelect} {whereClause}" // + "{groupByClause} {orderByClause}"
 
-    let exeReader (read: RowReader) : OIBRow =
+    let exeReader (read: RowReader) : LynxRow =
 
         let callMethodDynamically (instance: obj) (methodName: string) (args: obj[]) =
             let methodInfo = instance.GetType().GetMethod(methodName)
             methodInfo.Invoke(instance, args)
 
-        let oibRowType = typeof<OIBRow>
-        let constructor = oibRowType.GetConstructors().[0]
+        let lynxRowType = typeof<LynxRow>
+        let constructor = lynxRowType.GetConstructors().[0]
         let constructorArgs =
-            oibCols
+            lynxCols
             |> Array.map (fun {ColumnName = n; ColumnType = t} ->
                 n
                 |> deleteUpToFirstUnderscore
@@ -183,7 +182,7 @@ let oibQuery (connectionString: string) (grantYear: int) =
                 |> box
             )
 
-        constructor.Invoke(constructorArgs) :?> OIBRow
+        constructor.Invoke(constructorArgs) :?> LynxRow
 
         // {
         //     ContactID = read.int "id";

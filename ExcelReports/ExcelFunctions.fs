@@ -161,6 +161,7 @@ let enumerateValuesFromRange (cell: ICell) =
     values
 
 
+let t (cell: ICell) = cell.Sheet.Workbook
 // workbook.GetAllNames() = Status, Pending, Assessed named cell ranges
 // PONDER
 // How to match the found MergedRegion for a cell with the data
