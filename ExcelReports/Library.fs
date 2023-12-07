@@ -16,10 +16,22 @@ let demoA7 = getCell xls 3 "A7"
 
 // To get list validation values quickly
 let gv (cell: ICell) =
-    (findDataValidation cell |> Option.get).ValidationConstraint.Formula1
-    |> fun str -> str.Replace("$","")
+    let getWorkbook (cell: ICell) = cell.Sheet.Workbook :?> XSSFWorkbook
+    let getSheetIndex (cell: ICell) = (getWorkbook cell).GetSheetIndex(cell.Sheet)
+
+    ( findDataValidation cell
+      |> Option.get).ValidationConstraint.Formula1
+      |> fun str -> str.Replace("$",""
+    )
     |> convertCellRangeToList
-    |> List.map (fun address -> (address, (getCell (cell.Sheet.Workbook :?> XSSFWorkbook) 3 address).StringCellValue) )
+    |> List.map
+        (fun address ->
+            (address,
+            (getCell 
+                (getWorkbook cell) 
+                (getSheetIndex cell)
+                address).StringCellValue)
+        )
     |> fun list -> ( ((findMergedRegion cell |> Option.get).FormatAsString()), list)
 
 let gev (cell: ICell) =

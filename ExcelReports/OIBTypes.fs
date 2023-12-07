@@ -112,14 +112,6 @@ type Race =
 //     ("Q2", "Native Hawaiian or Pacific Islander"); ("R2", "White");
 //     ("S2", "Did not self identify Race"); ("T2", "2 or More Races")])
 
-// !!! TODO / PONDER !!! 2023-12-04_2332
-// If this is true, then `TwoOrMoreRaces: Race` has to be set for the client.
-// REASON:
-// Because our current system treats ethnicity and
-// race in one list... Therefore, it is would be
-// wrong to represent this constraint in the type
-// system and should be handled in the constructor
-// of DemographicsRow (see TODO 2023-12-04_2337).
 type HispanicOrLatino = YesOrNo
 type Ethnicity = HispanicOrLatino
 // "V7" [|"Yes"; "No"|]
@@ -168,26 +160,15 @@ type CognitiveImpairment     = YesOrNo
 type MentalHealthImpairment  = YesOrNo
 type OtherImpairment         = YesOrNo
 
-type AgeRelatedImpairments =
-    ( HearingImpairment
-    * MobilityImpairment
-    * CommunicationImpairment
-    * CognitiveImpairment
-    * MentalHealthImpairment
-    * OtherImpairment
-    )
-
-    // Implement IOIBString interface for AgeRelatedImpairments
-    // interface IOIBString with
-    //     member this.ToOIBString() =
-    //         match this with
-    //         | HearingImpairment       true
-    //         | MobilityImpairment      true
-    //         | CommunicationImpairment true
-    //         | CognitiveImpairment     true
-    //         | MentalHealthImpairment  true
-    //         | OtherImpairment         true -> "Yes"
-    //         |                            _ -> "No"
+type AgeRelatedImpairmentColumns =
+    AgeRelatedImpairments of
+        ( HearingImpairment
+        * MobilityImpairment
+        * CommunicationImpairment
+        * CognitiveImpairment
+        * MentalHealthImpairment
+        * OtherImpairment
+        )
 //  "AG7:AL7" "[|"Yes"; "No"|]
 
 type TypeOfResidence =
@@ -287,26 +268,38 @@ type County =
 
 // A row in the "PART III-DEMOGRAPHICS" sheet
 type DemographicsRow =
-    ( ClientName                   // "A7"
-    * IndividualsServed            // "B7:D7"
-    * AgeAtApplication             // "E7:I7"
-    * Gender                       // "J7:M7"
-    * Race                         // "N7:U7"
-    // TODO 2023-12-04_2337
-    // Add smart constructor for validation to cater for 2023-12-04_2337
-    * Ethnicity                    // "V7"
-    * DegreeOfVisualImpairment     // "W7:Z7"
-    * MajorCauseOfVisualImpairment // "AA7:AF7"
-    * AgeRelatedImpairments        // "AG7:AL7"
-    * TypeOfResidence              // "AM7:AR7"
-    * SourceOfReferral             // "AS7:BE7"
-    * County                       // "BF7"
-    )
+    DemographicsRow of
+        ( ClientName                   // "A7"
+        * IndividualsServed            // "B7:D7"
+        * AgeAtApplication             // "E7:I7"
+        * Gender                       // "J7:M7"
+        * Race                         // "N7:U7"
+        // TODO 2023-12-04_2337
+        // Add smart constructor: if `Ethnicity` is true, then `TwoOrMoreRaces: Race` has to be set for the client.
+        // REASON:
+        // Because our current system treats ethnicity and
+        // race in one list... Therefore, it is would be
+        // wrong to represent this constraint in the type
+        // system and should be handled in the constructor
+        // of DemographicsRow.
+        //
+        // PONDER Make sure to highlight somehow that
+        // this constraint (unlike `ServicesRow`'s
+        // 2023-12-07_1021 constraint) IS NOT imposed by
+        // the OIB report.
+        * Ethnicity                    // "V7"
+        * DegreeOfVisualImpairment     // "W7:Z7"
+        * MajorCauseOfVisualImpairment // "AA7:AF7"
+        * AgeRelatedImpairmentColumns  // "AG7:AL7"
+        * TypeOfResidence              // "AM7:AR7"
+        * SourceOfReferral             // "AS7:BE7"
+        * County                       // "BF7"
+        )
 
 // A. Clinical/functional Vision Assessments and Services
 // Vision  Assessment (Screening/ Exam/evaluation	Surgical or Therapeutic Treatment
-type VisionAssessment = YesOrNo
-type SurgicalOrTherapeuticTreatment = YesOrNo
+type               VisionAssessment = YesOrNo // "B7"
+type SurgicalOrTherapeuticTreatment = YesOrNo // "C7"
 
 type ClinicalFunctionalVisionAssessmentsAndServices =
     ( VisionAssessment
@@ -315,8 +308,99 @@ type ClinicalFunctionalVisionAssessmentsAndServices =
 
 // B. Assistive Technology Devices and Services
 // AT Goal Outcomes
+type ReceivedAssistiveTechnologyServicesOrDevices = YesOrNo // "D7"
+
+type AssistiveTechnologyGoalOutcomes = //   ("E7:H7",
+    | NotAssessed
+    | AssessedWithImprovedIndependence
+    | AssessedAndMaintainedIndependence
+    | AssessedWithDecreasedIndependence
+
+    interface IOIBString with
+        member this.ToOIBString() =
+            match this with
+            | NotAssessed                        -> "Not assessed"
+            | AssessedWithImprovedIndependence   -> "Assessed with improved independence"
+            | AssessedAndMaintainedIndependence  -> "Assessed and maintained independence"
+            | AssessedWithDecreasedIndependence  -> "Assessed with decreased independence"
+//   ("E7:H7",
+//    [("E2", "Not assessed"); ("F2", "Assessed with improved independence");
+//     ("G2", "Assessed and maintained independence");
+//     ("H2", "Assessed with decreased independence")])
+
+type AssistiveTechnologyColumns =
+    // TODO 2023-12-07_1021
+    // If `ReceivedAssistiveTechnologyServicesOrDevices` is `No` then `AssistiveTechnologyGoalOutcomes` should be `NotAssessed`.
+    // !!!
+    // !!! Make it a generic constraint because this will be a theme in later columns.
+    // !!!
+    // PONDER Unlike 2023-12-04_2337 constraint,
+    // this one IS imposed by the OIB report. How
+    // to highlight this fact? (This is a value
+    // level constraint, so, as far as I know, it
+    // cannot be represented in the type system
+    // without dependent types.)
+    // PONDER ADDENDUM
+    // Tried to implement this constraint in the
+    // type system (see below) but then another
+    // "translation" type / function will be
+    // needed to match the report's layout.
+    //
+    //     // This illustrates the point above, but
+    //     // it's still bad: I would associate
+    //     // `ServicesDelivered` with a list of
+    //     // services and not with outcomes.
+    //     type WereAssistiveTechnologyServicesOrDevicesDelivered = // "D7"
+    //     | NoServicesOrDevicesDelivered
+    //     | ServicesDelivered of AssistiveTechnologyGoalOutcomes
+    //
+    // Suffice to say, the goal is to get the job done,
+    // and using `...Row` types is easier/quicker for now.
+    AssistiveTechnologyColumns of
+        ( ReceivedAssistiveTechnologyServicesOrDevices // "D7"
+        * AssistiveTechnologyGoalOutcomes              // "E7:H7"
+        )
+
 // C. Independent Living and Adjustment Services
+type ReceivedOrientationAndMobilityTraining = YesOrNo // "J7"
+type ReceivedCommunicationSkills = YesOrNo // "K7"
+type ReceivedDailyLivingSkills = YesOrNo // "L7"
+type ReceivedAdvocacyTraining = YesOrNo // "M7"
+type ReceivedAdjustmentCounseling = YesOrNo // "N7"
+type ReceivedInformationAndReferral = YesOrNo // "O7"
+type ReceivedOtherServices = YesOrNo // "P7"
+type IndependentLivingAndAdjustmentOutcomes = // "Q7:T7"
+    | NotAssessed
+    | AssessedWithImprovedIndependence
+    | AssessedAndMaintainedIndependence
+    | AssessedWithDecreasedIndependence
+//   ("Q7:T7",
+//    [("Q2", "Not assessed"); ("R2", "Assessed with improved independence");
+//     ("S2", "Assessed and maintained independence");
+//     ("T2", "Assessed with decreased independence")])
+
+
+// Received O&M
+// Received Communication Skills
+// Received Daily Living Skills
+// Received Advocacy training
+// Received Adjustment Counseling
+// Received I&R
+// Received Other Services
 // IL/A Service Goal Outcomes
+
+type IndependentLivingAndAdjustmentColumns =
+    IndependentLivingAndAdjustmentColumns of
+        ( ReceivedOrientationAndMobilityTraining
+        * ReceivedCommunicationSkills
+        * ReceivedDailyLivingSkills
+        * ReceivedAdvocacyTraining
+        * ReceivedAdjustmentCounseling
+        * ReceivedInformationAndReferral
+        * ReceivedOtherServices
+        * IndependentLivingAndAdjustmentOutcomes
+        )
+
 // D. Supportive Services
 // Case Status
 // Living Situation Outcomes
@@ -326,11 +410,17 @@ type ClinicalFunctionalVisionAssessmentsAndServices =
 // County
 
 // A row in the "PART IV-V-SERVICES AND OUTCOMES" sheet
-// type ServicesRow =
-    // ( // "A7"  is  a formula  pulling  `ClientName`
-      // from  the Demographics  sheet's "A7"  cell
-      // (see `DemographicsRow`)
-
+type ServicesRow =
+    ServicesRow of
+        ( // "A7"  is  a formula  pulling  `ClientName`
+          // from  the Demographics  sheet's "A7"  cell
+          // (see `DemographicsRow`)
+          ClinicalFunctionalVisionAssessmentsAndServices // "B7:C7"
+          // TODO see 2023-12-07_1021 constraint
+        * AssistiveTechnologyColumns                // "D7:H7"
+        // "I7" is a formula calculating from "J7:P7" whether
+        // client received any IL/A services
+        )
 
 // NOTE 2023-12-04_2257
 // Not sure if a type unifying row types will be
