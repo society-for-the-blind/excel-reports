@@ -68,7 +68,7 @@ let getAgeAtApplication (lynxRow: LynxRow) (grantYearStart: System.DateOnly) : A
     let birthDateInDays = lynxRow.intake_birth_date.DayNumber
     let ageAtApplicationInYears = (grantYearStartInDays - birthDateInDays) / 365
     match ageAtApplicationInYears with
-    | _ when ageAtApplicationInYears < 55 -> failwith $"NOT IMPLEMENTED: Age below 55 not supported. Client: {lynxRow.contact_id} {getClientName lynxRow}"
+    | _ when ageAtApplicationInYears < 55 -> failwith $"NOT IMPLEMENTED: Age below 55 not supported. Client: {lynxRow.contact_id} {getClientName lynxRow}."
     | _ when ageAtApplicationInYears < 65 -> AgeBracket55To64
     | _ when ageAtApplicationInYears < 75 -> AgeBracket65To74
     | _ when ageAtApplicationInYears < 85 -> AgeBracket75To84
@@ -78,7 +78,7 @@ let getGender (lynxRow: LynxRow) : Gender =
     match lynxRow.intake_gender with
     | Some gender when gender = (toOIBString Male)   -> Male
     | Some gender when gender = (toOIBString Female) -> Female
-    | Some other -> failwith $"NOT IMPLEMENTED: Gender '{other}' not supported. Client: {lynxRow.contact_id} {getClientName lynxRow}"
+    | Some other -> failwith $"NOT IMPLEMENTED: Gender '{other}' not supported. Client: {lynxRow.contact_id} {getClientName lynxRow}."
     | None   -> DidNotSelfIdentifyGender
 
 let getRace (lynxRow: LynxRow) : Race =
@@ -114,9 +114,34 @@ let getRace (lynxRow: LynxRow) : Race =
     | Some "Other" ->
         DidNotSelfIdentifyRace
     | Some other ->
-        failwith $"NOT IMPLEMENTED: Race '{other}' not supported. Client: {lynxRow.contact_id} {getClientName lynxRow}"
+        failwith $"NOT IMPLEMENTED: Race '{other}' not supported. Client: {lynxRow.contact_id} {getClientName lynxRow}."
     | None ->
         DidNotSelfIdentifyRace
+
+let getEthnicity (lynxRow: LynxRow) : HispanicOrLatino =
+    // See HISTORICAL NOTEs 2023-12-10_2222 and
+    // 2023-12-10_2232 in `getRace`.
+    match (lynxRow.intake_ethnicity, lynxRow.intake_other_ethnicity) with
+    | (Some "Hispanic or Latino", _) -> Yes
+    | (None, Some _)                 -> No
+    | (_, Some "Hispanic or Latino") -> Yes
+    | (_, Some _)                    -> No
+    | (_, None)                      -> No
+    // | (Some this, Some that) -> failwith $"NOT IMPLEMENTED: Race {this}, Ethnicity {that}. Client: {lynxRow.contact_id} {getClientName lynxRow}."
+    // | (None, Some that) -> failwith $"NOT IMPLEMENTED: Race None, Ethnicity {that}. Client: {lynxRow.contact_id} {getClientName lynxRow}."
+
+let getDegreeOfVisualImpairment (lynxRow: LynxRow) : DegreeOfVisualImpairment =
+    let degreeOfVisualImpairment =
+        lynxRow.intake_degree_of_visual_impairment
+        |> Option.defaultValue ""
+    match degreeOfVisualImpairment with
+    | "No Light Perception" -> NoLightPerception
+    | "Light Perception Only" -> LightPerceptionOnly
+    | "Low Vision" -> LowVision
+    | "Blind" -> Blind
+    | "Other" -> Other
+    | "" -> NoLightPerception
+    | other -> failwith $"NOT IMPLEMENTED: Degree of visual impairment '{other}' not supported. Client: {lynxRow.contact_id} {getClientName lynxRow}."
 
 let fillDemographicsRow (lynxRow: LynxRow) (grantYearStart: System.DateOnly) : DemographicsRow =
     DemographicsRow
