@@ -56,6 +56,13 @@ let deleteUpToFirstUnderscore (str: string) =
 //      Remove the hard-coded password.
 let connectionString = "postgres://postgres:XntSrCoEEZtiacZrx2m7jR5htEoEfYyoKncfhNmnPrLqPzxXTU5nxM@192.168.64.4:5432/lynx"
 
+// NOTE Naming convention of the record fields
+//
+//      <table_alias>_<column_name>
+//
+//      where `<table_alias>`-es are defined
+//      in the  `lynxQuery` function in the
+//      `joins` variable.
 type LynxRow = {
     contact_id          : int;
     contact_last_name   : string;
@@ -71,7 +78,8 @@ type LynxRow = {
     // means whether the person is Hispanic or not. If Hispanic, then
     // the "ethnicity" column will say "yes" and the "race" column will
     // ALWAYS be "2 or More Races".
-    intake_ethnicity           : string option; // race AND ethnicity
+    intake_ethnicity           : string option; // race
+    intake_other_ethnicity     : string option  // ethnicity (i.e., Hispanic or not)
     intake_degree              : string option; // degree of visual impairment
     intake_eye_condition       : string option; // major cause of visual impairment
     intake_hearing_loss        : bool;          // hearing impairment
@@ -122,13 +130,20 @@ type LynxRow = {
     plan_living_plan_progress    : string option;
 }
 
+type LynxQuery = LynxRow list
+
+type LynxData = {
+    grantYearStart : System.DateOnly;
+    lynxQuery : LynxQuery;
+}
+
 let getRecordFieldNamesAndTypes<'T, 'U> (mapper: FieldInfo -> 'U) =
     typeof<'T>.GetFields(BindingFlags.Public ||| BindingFlags.Instance)
     |> Array.map mapper
 
 // let qtestodelete = connectionString |> Sql.connect |> Sql.query "select * from lynx_sipnote where id = 27555;" |> Sql.execute (fun (read: RowReader) -> read.text "note")
 
-let lynxQuery (connectionString: string) (grantYear: int) =
+let lynxQuery (connectionString: string) (grantYear: int) : LynxData =
 
     let (lynxCols: LynxColumn array) =
         getRecordFieldNamesAndTypes<LynxRow,LynxColumn> toLynxColumn
@@ -194,6 +209,10 @@ let lynxQuery (connectionString: string) (grantYear: int) =
     |> Sql.connect
     |> Sql.query query
     |> Sql.execute exeReader
+    |> fun (q: LynxQuery) ->
+        { grantYearStart = System.DateOnly(grantYear, 10, 1);
+          lynxQuery = q
+        }
 
 // === SqlHydra EXPERIMENTS ===
 // User ID=postgres;Password=XntSrCoEEZtiacZrx2m7jR5htEoEfYyoKncfhNmnPrLqPzxXTU5nxM;Host=192.168.64.4;Port=5432;Database=lynx;

@@ -286,3 +286,9 @@ let e (r: IRow) = 27
 //     | Right -> insertListRight sheet startCellAddress list
 
 // let enterClients (sheet: ISheet) (startCellAddress: CellAddress) (direction: PasteDirection) =
+
+let setNamedRange (workbook: XSSFWorkbook) (sheetName: string) (rangeName: string) (startRow: int) (startColumn: int) (endRow: int) (endColumn: int) =
+    let name: SS.UserModel.IName = workbook.CreateName()
+    name.NameName <- rangeName
+    let cellRangeAddress = new CellRangeAddress(startRow, endRow, startColumn, endColumn)
+    name.RefersToFormula <- $"{sheetName}!{cellRangeAddress.FormatAsString()}"

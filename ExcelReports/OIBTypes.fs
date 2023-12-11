@@ -37,11 +37,8 @@ type ClientName =
             match this with
             | ClientName name -> name
 
-// TODO 2023-12-04_2335
-// Create interface and implement it for each type
-// to convert to the proper value according the
-// Excel OIB report.
-// https://learn.microsoft.com/en-us/dotnet/fsharp/language-reference/discriminated-unions#members
+// The name is misleading (just look at the union
+// cases), but this is what the OIB report calls it.
 type IndividualsServed =
     | NewCase
     | PriorCase
@@ -56,18 +53,18 @@ type IndividualsServed =
 //     ("C2", "Case open between Oct. 1 - Sept. 30")])
 
 type AgeAtApplication =
-    | From55To64
-    | From65To74
-    | From75To84
-    | From85AndOlder
+    | AgeBracket55To64
+    | AgeBracket65To74
+    | AgeBracket75To84
+    | AgeBracket85AndOlder
 
     interface IOIBString with
         member this.ToOIBString() =
             match this with
-            | From55To64 -> "55-64"
-            | From65To74 -> "65-74"
-            | From75To84 -> "75-84"
-            | From85AndOlder -> "85 and older"
+            | AgeBracket55To64 -> "55-64"
+            | AgeBracket65To74 -> "65-74"
+            | AgeBracket75To84 -> "75-84"
+            | AgeBracket85AndOlder -> "85 and older"
 //   ("E7:I7",
 //    [("E2", "55-64"); ("F2", "65-74"); ("G2", "75-84"); ("H2", "85 and older")])
 
@@ -92,20 +89,20 @@ type Race =
     | AfricanAmerican
     | PacificIslanderOrNativeHawaiian
     | White
-    | DidNotSelfIdentifyEthnicity
+    | DidNotSelfIdentifyRace
     | TwoOrMoreRaces
 
     // Implement IOIBString interface for Race
     interface IOIBString with
         member this.ToOIBString() =
             match this with
-            | NativeAmerican                  -> "Native American"
+            | NativeAmerican                  -> "American Indian or Alaska Native"
             | Asian                           -> "Asian"
-            | AfricanAmerican                 -> "African American"
-            | PacificIslanderOrNativeHawaiian -> "Pacific Islander or Native Hawaiian"
+            | AfricanAmerican                 -> "Black or African American"
+            | PacificIslanderOrNativeHawaiian -> "Native Hawaiian or Pacific Islander"
             | White                           -> "White"
-            | DidNotSelfIdentifyEthnicity     -> "Did Not Self-Identify Ethnicity"
-            | TwoOrMoreRaces                  -> "Two or More Races"
+            | DidNotSelfIdentifyRace          -> "Did not self identify Race"
+            | TwoOrMoreRaces                  -> "2 or More Races"
 //   ("N7:U7",
 //    [("N2", "American Indian or Alaska Native"); ("O2", "Asian");
 //     ("P2", "Black or African American");
@@ -273,20 +270,26 @@ type DemographicsRow =
         * IndividualsServed            // "B7:D7"
         * AgeAtApplication             // "E7:I7"
         * Gender                       // "J7:M7"
-        * Race                         // "N7:U7"
-        // TODO 2023-12-04_2337
-        // Add smart constructor: if `Ethnicity` is true, then `TwoOrMoreRaces: Race` has to be set for the client.
-        // REASON:
-        // Because our current system treats ethnicity and
-        // race in one list... Therefore, it is would be
-        // wrong to represent this constraint in the type
-        // system and should be handled in the constructor
-        // of DemographicsRow.
+        // TODO 2023-12-10_1726
+        // Well, more like a note really, for when a
+        // LYNX query (see `lynxQuery`) "row" needs
+        // to be converted to a `DemographicsRow`.
+        // LYNX has the `lynx_intake` columns
+        // `ethnicity` and `other_ethnicity` that
+        // correspond to `Race` and `Ethnicity`
+        // respectively.
         //
-        // PONDER Make sure to highlight somehow that
-        // this constraint (unlike `ServicesRow`'s
-        // 2023-12-07_1021 constraint) IS NOT imposed by
-        // the OIB report.
+        // The catch: `ethnicity` used to have all
+        // race options from the OIB report PLUS the
+        // ethnicity column (i.e., "Hispanic or
+        // Latino"), and `other_ethnicity` is mostly
+        // empty. So when `ethnicity` is "Hispanic
+        // or Latino", it means that `Race` will
+        // have to be set `TwoOrMoreRaces`... This
+        // has just been fixed in LYNX, but this has
+        // to be checked for backwards
+        // compatibility.
+        * Race                         // "N7:U7"
         * Ethnicity                    // "V7"
         * DegreeOfVisualImpairment     // "W7:Z7"
         * MajorCauseOfVisualImpairment // "AA7:AF7"
