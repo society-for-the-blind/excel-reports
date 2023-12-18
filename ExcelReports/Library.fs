@@ -64,21 +64,34 @@ let getIndividualsServed (lynxRow: LynxRow) (grantYearStart: System.DateOnly) : 
     | false -> NewCase
 
 let getAgeAtApplication (lynxRow: LynxRow) (grantYearStart: System.DateOnly) : AgeAtApplication =
-    let grantYearStartInDays = grantYearStart.DayNumber
-    let birthDateInDays = lynxRow.intake_birth_date.DayNumber
-    let ageAtApplicationInYears = (grantYearStartInDays - birthDateInDays) / 365
-    match ageAtApplicationInYears with
-    | _ when ageAtApplicationInYears < 55 -> failwith $"NOT IMPLEMENTED: Age below 55 not supported. Client: {lynxRow.contact_id} {getClientName lynxRow}."
-    | _ when ageAtApplicationInYears < 65 -> AgeBracket55To64
-    | _ when ageAtApplicationInYears < 75 -> AgeBracket65To74
-    | _ when ageAtApplicationInYears < 85 -> AgeBracket75To84
-    |                           _  -> AgeBracket85AndOlder
+    let getAge (lynxRow: LynxRow) (grantYearStart: System.DateOnly) =
+        let grantYearStartInDays = grantYearStart.DayNumber
+        let birthDateInDays = lynxRow.intake_birth_date.DayNumber
+        // Sloppy accomodation for leap years
+        (float (grantYearStartInDays - birthDateInDays)) / 365.25
+
+    let age = getAge lynxRow grantYearStart
+    match lynxRow.intake_birth_date with
+    // NOTE 2023-12-10_2006
+    // There are (or will be) age brackets younger
+    // than 55, but that is probably a clerical
+    // error as the SIP program is only for
+    // individuals above 55.
+    //
+    // TODO 2023-12-10_2009 Replace `failtwith`s with a visual cue in the OIB report
+    //
+    | None -> failwith $"No birth date in LYNX. Client: {lynxRow.contact_id} {getClientName lynxRow}."
+    | _ when age < 55 -> failwith $"Age below 55 not in OIB report. Client: {lynxRow.contact_id} {getClientName lynxRow}."
+    | _ when age < 65 -> AgeBracket55To64
+    | _ when age < 75 -> AgeBracket65To74
+    | _ when age < 85 -> AgeBracket75To84
+    |              _  -> AgeBracket85AndOlder
 
 let getGender (lynxRow: LynxRow) : Gender =
     match lynxRow.intake_gender with
     | Some gender when gender = (toOIBString Male)   -> Male
     | Some gender when gender = (toOIBString Female) -> Female
-    | Some other -> failwith $"NOT IMPLEMENTED: Gender '{other}' not supported. Client: {lynxRow.contact_id} {getClientName lynxRow}."
+    | Some other -> failwith $"Gender '{other}' not in OIB report. Client: {lynxRow.contact_id} {getClientName lynxRow}."
     | None   -> DidNotSelfIdentifyGender
 
 let getRace (lynxRow: LynxRow) : Race =
@@ -114,7 +127,7 @@ let getRace (lynxRow: LynxRow) : Race =
     | Some "Other" ->
         DidNotSelfIdentifyRace
     | Some other ->
-        failwith $"NOT IMPLEMENTED: Race '{other}' not supported. Client: {lynxRow.contact_id} {getClientName lynxRow}."
+        failwith $"Race '{other}' not in OIB report. Client: {lynxRow.contact_id} {getClientName lynxRow}."
     | None ->
         DidNotSelfIdentifyRace
 
@@ -127,23 +140,149 @@ let getEthnicity (lynxRow: LynxRow) : HispanicOrLatino =
     | (_, Some "Hispanic or Latino") -> Yes
     | (_, Some _)                    -> No
     | (_, None)                      -> No
-    // | (Some this, Some that) -> failwith $"NOT IMPLEMENTED: Race {this}, Ethnicity {that}. Client: {lynxRow.contact_id} {getClientName lynxRow}."
-    // | (None, Some that) -> failwith $"NOT IMPLEMENTED: Race None, Ethnicity {that}. Client: {lynxRow.contact_id} {getClientName lynxRow}."
+    // | (Some this, Some that) -> failwith $"Race {this}, Ethnicity {that}. Client: {lynxRow.contact_id} {getClientName lynxRow}."
+    // | (None, Some that) -> failwith $"Race None, Ethnicity {that}. Client: {lynxRow.contact_id} {getClientName lynxRow}."
 
 let getDegreeOfVisualImpairment (lynxRow: LynxRow) : DegreeOfVisualImpairment =
-    let degreeOfVisualImpairment =
-        lynxRow.intake_degree_of_visual_impairment
-        |> Option.defaultValue ""
-    match degreeOfVisualImpairment with
-    | "No Light Perception" -> NoLightPerception
-    | "Light Perception Only" -> LightPerceptionOnly
-    | "Low Vision" -> LowVision
-    | "Blind" -> Blind
-    | "Other" -> Other
-    | "" -> NoLightPerception
-    | other -> failwith $"NOT IMPLEMENTED: Degree of visual impairment '{other}' not supported. Client: {lynxRow.contact_id} {getClientName lynxRow}."
+    match lynxRow.intake_degree with
+    | Some degree when degree = (toOIBString TotallyBlind) ->
+        TotallyBlind
+    | Some "Totally Blind (NP or NLP)" ->
+        TotallyBlind
+    | Some degree when degree = (toOIBString LegallyBlind) ->
+        LegallyBlind
+    | Some degree when degree = (toOIBString SevereVisionImpairment) ->
+        SevereVisionImpairment
+    // Historical LYNX options
+    | Some "Light Perception Only" ->
+        LegallyBlind
+    | Some "Low Vision" ->
+        SevereVisionImpairment
+    // TODO 2023-12-11_1617
+    // The "degree of visual impairment" in the OIB
+    // report is mandatory.
+    // TODO 2023-12-10_2009 Replace `failtwith`s with a visual cue in the OIB report
+    | None -> failwith $"Degree of visual impairment is null in LYNX. Client: {lynxRow.contact_id} {getClientName lynxRow}."
+    // TODO 2023-12-10_2009 Replace `failtwith`s with a visual cue in the OIB report
+    | Some other -> failwith $"Degree of visual impairment '{other}' not in OIB report. Client: {lynxRow.contact_id} {getClientName lynxRow}."
 
-let fillDemographicsRow (lynxRow: LynxRow) (grantYearStart: System.DateOnly) : DemographicsRow =
+let getMajorCauseOfVisualImpairment (lynxRow: LynxRow) : MajorCauseOfVisualImpairment =
+    match lynxRow.intake_eye_condition with
+    | Some eyeCondition when eyeCondition = (toOIBString MacularDegeneration) ->
+        MacularDegeneration
+    | Some eyeCondition when eyeCondition = (toOIBString DiabeticRetinopathy) ->
+        DiabeticRetinopathy
+    | Some eyeCondition when eyeCondition = (toOIBString Glaucoma) ->
+        Glaucoma
+    | Some eyeCondition when eyeCondition = (toOIBString Cataracts) ->
+        Cataracts
+    | Some eyeCondition when eyeCondition = (toOIBString OtherCausesOfVisualImpairment) ->
+        OtherCausesOfVisualImpairment
+    // NOTE 2023-12-11_1920
+    // Clients imported from the old system have all
+    // kinds of entries because it didn't have a
+    // dropdown, but a text field.
+    | Some _ -> OtherCausesOfVisualImpairment
+    | None   -> OtherCausesOfVisualImpairment
+
+let getAgeRelatedImpairmentColumns (lynxRow: LynxRow) : AgeRelatedImpairmentColumns =
+
+    // === HELPERS
+    let hasImpairment (lynxColumns: bool list) : YesOrNo =
+        match (List.contains true lynxColumns) with
+        | true -> Yes
+        | false -> No
+
+    let optstringToBool (optstring: string option) : bool =
+        match optstring with
+        | Some _ -> true
+        | None   -> false
+    // `optstring |> Option.isNone |> not` is shorter, but more obscure
+    // ===
+
+    let getHearingImpairment (lynxRow: LynxRow) : HearingImpairment =
+        match lynxRow.intake_hearing_loss with
+        | true -> Yes
+        | false -> No
+
+    let getMobilityImpairment (lynxRow: LynxRow) : MobilityImpairment =
+        match lynxRow.intake_mobility with
+        | true -> Yes
+        | false -> No
+
+    let getCommunicationImpairment (lynxRow: LynxRow) : CommunicationImpairment =
+        match lynxRow.intake_communication with
+        | true -> Yes
+        | false -> No
+
+    let getCognitiveImpairment (lynxRow: LynxRow) : CognitiveImpairment =
+        [ lynxRow.intake_alzheimers
+        ; lynxRow.intake_learning_disability
+        ; lynxRow.intake_memory_loss
+        ]
+        |> hasImpairment
+
+    let getMentalHealthImpairment (lynxRow: LynxRow) : MentalHealthImpairment =
+        [ (lynxRow.intake_mental_health |> optstringToBool)
+        ; lynxRow.intake_substance_abuse
+        ]
+        |> hasImpairment
+
+    let getOtherImpairment (lynxRow: LynxRow) : OtherImpairment =
+        [ lynxRow.intake_geriatric
+        ; lynxRow.intake_stroke
+        ; lynxRow.intake_seizure
+        ; lynxRow.intake_migraine
+        ; lynxRow.intake_heart
+        ; lynxRow.intake_diabetes
+        ; lynxRow.intake_dialysis
+        ; lynxRow.intake_cancer
+        ; lynxRow.intake_arthritis
+        ; lynxRow.intake_high_bp
+        ; lynxRow.intake_neuropathy
+        ; lynxRow.intake_pain
+        ; lynxRow.intake_asthma
+        ; lynxRow.intake_musculoskeletal
+        ; (lynxRow.intake_allergies |> optstringToBool)
+        ; lynxRow.intake_dexterity
+        ]
+        |> hasImpairment
+
+    AgeRelatedImpairments
+        ( getHearingImpairment lynxRow
+        , getMobilityImpairment lynxRow
+        , getCommunicationImpairment lynxRow
+        , getCognitiveImpairment lynxRow
+        , getMentalHealthImpairment lynxRow
+        , getOtherImpairment lynxRow
+        )
+
+let getTypeOfResidence (lynxRow: LynxRow) : TypeOfResidence =
+    match lynxRow.intake_residence_type with
+    | Some s when s = (toOIBString PrivateResidence) ->
+        PrivateResidence
+    | Some s when s = (toOIBString SeniorIndependentLiving) ->
+        SeniorIndependentLiving
+    | Some s when s = (toOIBString AssistedLivingFacility) ->
+        TypeOfResidence.AssistedLivingFacility
+    | Some s when s = (toOIBString NursingHome) ->
+        TypeOfResidence.NursingHome
+    | Some s when s = (toOIBString Homeless) ->
+        Homeless
+    // Historical LYNX options
+    | Some "Community Residential" ->
+        SeniorIndependentLiving
+    | Some "Skilled Nursing Care" ->
+        TypeOfResidence.NursingHome
+    | Some "Assisted Living" ->
+        TypeOfResidence.AssistedLivingFacility
+    | Some _
+    | None ->
+        failwith $"Type of residence {lynxRow.intake_residence_type} not in OIB report. Client: {lynxRow.contact_id} {getClientName lynxRow}."
+
+let getSourceOfReferral (lynxRow: LynxRow) : SourceOfReferral =
+
+let createDemographicsRow (lynxRow: LynxRow) (grantYearStart: System.DateOnly) =
     DemographicsRow
         ( (lynxRow |> getClientName),
           (getIndividualsServed lynxRow grantYearStart),

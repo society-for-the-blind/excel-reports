@@ -56,74 +56,93 @@ let deleteUpToFirstUnderscore (str: string) =
 //      Remove the hard-coded password.
 let connectionString = "postgres://postgres:XntSrCoEEZtiacZrx2m7jR5htEoEfYyoKncfhNmnPrLqPzxXTU5nxM@192.168.64.4:5432/lynx"
 
-// NOTE Naming convention of the record fields
-//
-//      <table_alias>_<column_name>
-//
-//      where `<table_alias>`-es are defined
-//      in the  `lynxQuery` function in the
-//      `joins` variable.
+// NOTE 2023-12-14_1221 Why are most record fields options?
+// Because  the LYNX  database  tables  have almost  no
+// constraints (practically used as an Excel workbook),
+// so it is  just safer to treat any  returned value as
+// invalid.
 type LynxRow = {
-    contact_id          : int;
-    contact_last_name   : string;
-    contact_first_name  : string;
+
+    // NOTE Naming convention of the record fields
+    //
+    //      <table_alias>_<column_name>
+    //
+    //      where `<table_alias>`-es are defined
+    //      in the  `lynxQuery` function in the
+    //      `joins` variable.
+
+    // Pretty sure the ID will never be null,
+    // but one never knows with LYNX...
+    contact_id          :    int option;
+    contact_last_name   : string option;
+    contact_first_name  : string option;
     contact_middle_name : string option;
 
-    intake_intake_date         : System.DateOnly;
-    intake_birth_date          : System.DateOnly;
-    intake_gender              : string option;
+    intake_intake_date : System.DateOnly option;
+    intake_birth_date  : System.DateOnly option;
+    intake_gender      :          string option;
+
     // TODO 2023-12-02_2230
     // This one belongs to 2 OIB demographics columns (race, ethnicity).
     // The race is a dropdown with pre-defined values, ethnicity only
     // means whether the person is Hispanic or not. If Hispanic, then
     // the "ethnicity" column will say "yes" and the "race" column will
     // ALWAYS be "2 or More Races".
-    intake_ethnicity           : string option; // race
-    intake_other_ethnicity     : string option  // ethnicity (i.e., Hispanic or not)
-    intake_degree              : string option; // degree of visual impairment
-    intake_eye_condition       : string option; // major cause of visual impairment
-    intake_hearing_loss        : bool;          // hearing impairment
-    intake_mobility            : bool;          // mobility impairment
-    intake_communication       : bool;          // communication impairment
-    intake_stroke              : bool;          // |
-    intake_seizure             : bool;          // |
-    intake_alzheimers          : bool;          // | // cognitive or intellectual impairment
-    intake_memory_loss         : bool;          // | // other impairment
-    intake_learning_disability : bool;          // |
-    intake_migraine            : bool;          // | TODO 2023-12-02_2157 talk to Shane how to untangle this
-    intake_heart               : bool;          // |                      and what belongs to other impairments
-    intake_diabetes            : bool;          // |
-    intake_dialysis            : bool;          // |
-    intake_cancer              : bool;          // |
-    intake_arthritis           : bool;          // |
-    intake_high_bp             : bool;          // |
-    intake_neuropathy          : bool;          // |
-    intake_pain                : bool;          // |
-    intake_asthma              : bool;          // |
-    intake_musculoskeletal     : bool;          // |
-    intake_substance_abuse     : bool;          // |
-    intake_allergies           : string option; // | !!!
-    intake_geriatric           : bool;          // |
-    intake_dexterity           : bool;          // |
+    intake_ethnicity       : string option; // race
+    intake_other_ethnicity : string option  // ethnicity (i.e., Hispanic or not)
+    intake_degree          : string option; // degree of visual impairment
+    intake_eye_condition   : string option; // major cause of visual impairment
+
+    // H. Other Age-Related Impairments
+    intake_hearing_loss  : bool option; // hearing impairment
+    intake_mobility      : bool option; // mobility impairment
+    intake_communication : bool option; // communication impairment
+
+    // NOTE 2023-12-10_2226
+    // `lynx_intake`  table's `geriatric`  column seems  to
+    // map directly to the  OIB report's "Other Impairment"
+    // column   in  the   "Demographics"   sheet,  but   we
+    // decided  to also  "OR" it  with the  other remainder
+    // health-related  columns that  don't belong  anywhere
+    // else.
+    intake_geriatric           :   bool option; // | other impairment
+    intake_stroke              :   bool option; // |
+    intake_seizure             :   bool option; // |
+    intake_migraine            :   bool option; // |
+    intake_heart               :   bool option; // |
+    intake_diabetes            :   bool option; // |
+    intake_dialysis            :   bool option; // |
+    intake_cancer              :   bool option; // |
+    intake_arthritis           :   bool option; // |
+    intake_high_bp             :   bool option; // |
+    intake_neuropathy          :   bool option; // |
+    intake_pain                :   bool option; // |
+    intake_asthma              :   bool option; // |
+    intake_musculoskeletal     :   bool option; // |
+    intake_allergies           : string option; // |
+    intake_dexterity           :   bool option; // |
+
+    intake_alzheimers          : bool option; // |
+    intake_memory_loss         : bool option; // | cognitive impairment
+    intake_learning_disability : bool option; // |
+
+    intake_mental_health       : string option; // | mental health impairment
+    intake_substance_abuse     :   bool option;  // |
+
     intake_residence_type      : string option; // | // type of residence
     intake_referred_by         : string option; // | // source of referral
 
-    // TODO 2023-12-02_2153
-    // This is a boolean in the OIB report, so I guess that when this is
-    // not null, then it should be true.
-    intake_mental_health       : string option // mental health impairment
+    note_at_devices     :            bool option;
+    note_orientation    :            bool option;
+    note_dls            :            bool option;
+    note_communications :            bool option;
+    note_advocacy       :            bool option;
+    note_counseling     :            bool option;
+    note_information    :            bool option;
+    note_support        :            bool option;
+    note_note_date      : System.DateOnly option;
 
-    note_at_devices     : bool;
-    note_orientation    : bool;
-    note_dls            : bool;
-    note_communications : bool;
-    note_advocacy       : bool;
-    note_counseling     : bool;
-    note_information    : bool;
-    note_support        : bool;
-    note_note_date      : System.DateOnly;
-
-    plan_plan_name               : string;
+    plan_plan_name               : string option;
     plan_at_outcomes             : string option;
     plan_community_plan_progress : string option;
     plan_ila_outcomes            : string option;

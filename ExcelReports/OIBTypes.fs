@@ -291,6 +291,8 @@ type DemographicsRow =
         // compatibility.
         * Race                         // "N7:U7"
         * Ethnicity                    // "V7"
+        // Why the `option` type? See TODO 2023-12-11_1617
+        // in `ExcelReports/LynxData.fs`.
         * DegreeOfVisualImpairment     // "W7:Z7"
         * MajorCauseOfVisualImpairment // "AA7:AF7"
         * AgeRelatedImpairmentColumns  // "AG7:AL7"
