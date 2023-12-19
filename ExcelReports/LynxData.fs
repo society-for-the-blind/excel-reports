@@ -1,10 +1,14 @@
 module ExcelReports.LynxData
 
-// #r "nuget: SqlHydra.Query, 2.2.1";;
-// #r "nuget: Npgsql.FSharp, 5.7.0";;
+(*
+#r "nuget: Npgsql.FSharp, 5.7.0";;
+#load "ExcelReports/LynxData.fs";;
+*)
+
 open System
 open System.Reflection
 open Npgsql.FSharp
+open System.Text.RegularExpressions
 
 type LynxColumn = {
     ColumnName : string;
@@ -18,17 +22,33 @@ let flip (f: 'a -> 'b -> 'c) (x: 'b) (y: 'a) = f y x
 // | Text of string
 // | Bool of bool
 // | DateOnly of System.DateOnly
-// | TextOrNone of string option
+// | oextOrNone of string option
+
+let (|GetType|_|) (ct: Type) (t: Type) =
+    match Regex("Option").Match(t.FullName).Success with
+    | true ->
+        Regex("\[(System.*?),").Match(t.FullName).Groups.[1].Value
+        |> fun (extractedType: string) -> (extractedType = ct.FullName)
+        |> fun (isMatch: bool) -> ( isMatch, "option" )
+        |> Some
+    | false ->
+        Some <| ( (t.FullName = ct.FullName), "" )
 
 let typeToRowReaderMember (t: Type) =
+    let intType      = typeof<int>
+    let stringType   = typeof<string>
+    let boolType     = typeof<bool>
+    let dateOnlyType = typeof<System.DateOnly>
+
     match t with
-    | _ when t = typeof<int> -> "int"
-    | _ when t = typeof<string> -> "text"
-    | _ when t = typeof<bool> -> "bool"
-    | _ when t = typeof<System.DateOnly> -> "dateOnly"
-    | _ when t.FullName.Contains("Option") &&
-             t.FullName.Contains("String") -> "textOrNone"
-    | _ -> failwith "NOT IMPLEMENTED: Type not supported."
+    | GetType intType      (true, "") -> "int"
+    | GetType stringType   (true, "") -> "text"
+    | GetType boolType     (true, "") -> "bool"
+    | GetType dateOnlyType (true, "") -> "dateOnly"
+    | GetType dateOnlyType (true, "option") -> "dateOnlyOrNone"
+    | GetType stringType   (true, "option") -> "textOrNone"
+    | GetType boolType     (true, "option") -> "boolOrNone"
+    | _ -> failwith $"NOT IMPLEMENTED: Type {t.FullName}."
 
 let toLynxColumn (fieldInfo: FieldInfo) : LynxColumn =
     // NOTE 2023-12-01_2227
@@ -71,9 +91,7 @@ type LynxRow = {
     //      in the  `lynxQuery` function in the
     //      `joins` variable.
 
-    // Pretty sure the ID will never be null,
-    // but one never knows with LYNX...
-    contact_id          :    int option;
+    contact_id          :    int;
     contact_last_name   : string option;
     contact_first_name  : string option;
     contact_middle_name : string option;
