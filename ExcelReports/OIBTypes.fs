@@ -1,5 +1,9 @@
 module ExcelReports.OIBTypes
 
+(*
+#load "ExcelReports/OIBTypes.fs";;
+*)
+
 // NOTE 2023-12-03_2153
 // F# supports this out of the box:
 //
@@ -157,7 +161,7 @@ type CognitiveImpairment     = YesOrNo
 type MentalHealthImpairment  = YesOrNo
 type OtherImpairment         = YesOrNo
 
-type AgeRelatedImpairmentColumns =
+type AgeRelatedImpairmentSubrow =
     AgeRelatedImpairments of
         ( HearingImpairment
         * MobilityImpairment
@@ -263,8 +267,41 @@ type County =
             | _              -> string this
 // "BF7"
 
+// TODO 2023-12-18_2336
+// Can this even be used in practice?
+type DemographicsColumn =
+    // Each union option is a column of singular or
+    // merged cells (see ranges in comments)
+    | A     of ClientName                   // "A7"
+    | B_D   of IndividualsServed            // "B7:D7"
+    | E_I   of AgeAtApplication             // "E7:I7"
+    | J_M   of Gender                       // "J7:M7"
+    | N_U   of Race                         // "N7:U7"
+    | V     of Ethnicity                    // "V7"
+    | W_Z   of DegreeOfVisualImpairment     // "W7:Z7"
+    | AA_AF of MajorCauseOfVisualImpairment // "AA7:AF7"
+    // Columns of `AgeRelatedImpairmentSubrow` "AG7:AL7"
+    | AG    of HearingImpairment
+    | AH    of MobilityImpairment
+    | AI    of CommunicationImpairment
+    | AJ    of CognitiveImpairment
+    | AK    of MentalHealthImpairment
+    | AL    of OtherImpairment
+    | AM_AR of TypeOfResidence              // "AM7:AR7"
+    | AS_BE of SourceOfReferral             // "AS7:BE7"
+    | BF    of County                       // "BF7"
+
 // A row in the "PART III-DEMOGRAPHICS" sheet
 type DemographicsRow =
+    // PONDER 2023-12-17_2233
+    // Should these be `DemoGraphicsColumn`? Or
+    // would that just be an exercise in pedantry?
+    // After all, the whole point of a tuple is that
+    // it can contain different types. Also, if
+    // `DemographicsColumn` is used, then it will be
+    // repeated 12 times ( e.g., `DemographicsColumn
+    // of DemographicsColumn * ...`), losing most of
+    // its meaning.
     DemographicsRow of
         ( ClientName                   // "A7"
         * IndividualsServed            // "B7:D7"
@@ -295,7 +332,7 @@ type DemographicsRow =
         // in `ExcelReports/LynxData.fs`.
         * DegreeOfVisualImpairment     // "W7:Z7"
         * MajorCauseOfVisualImpairment // "AA7:AF7"
-        * AgeRelatedImpairmentColumns  // "AG7:AL7"
+        * AgeRelatedImpairmentSubrow   // "AG7:AL7"
         * TypeOfResidence              // "AM7:AR7"
         * SourceOfReferral             // "AS7:BE7"
         * County                       // "BF7"

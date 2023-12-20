@@ -4,6 +4,8 @@ open ExcelFunctions
 open LynxData
 open OIBTypes
 
+open FSharp.Reflection
+
 // The name of the opened Excel file is the version
 // of this module.
 
@@ -48,54 +50,147 @@ let gev (cell: ICell) =
 //
 // but it's not really worth it.
 
-let getClientName (lynxRow: LynxRow): ClientName =
-    let clientName =
-        lynxRow.contact_last_name + ", " +
-        lynxRow.contact_first_name + " " +
-        (Option.defaultValue "" lynxRow.contact_middle_name)
-        |> fun str -> str.Trim() // if no middle name
-    ClientName clientName
+let getClientName (lynxRow: LynxRow): Result<IOIBString, string> =
+    let middleName = Option.defaultValue "" lynxRow.contact_middle_name
+    let firstAndLastNames =
+        ( lynxRow.contact_last_name
+        , lynxRow.contact_first_name
+        )
+    match firstAndLastNames with
+    | (None, _)
+    | (_, None) ->
+        Error $"Client name is missing in LYNX. (Contact ID: {lynxRow.contact_id})"
+    | (Some last, Some first) ->
+        let name = (last + ", " + first + " " + middleName.Trim())
+        Ok (A <| ClientName name)
 
-let getIndividualsServed (lynxRow: LynxRow) (grantYearStart: System.DateOnly) : IndividualsServed =
-    let isIntakeBeforeGrantYear =
-        lynxRow.intake_intake_date < grantYearStart
-    match isIntakeBeforeGrantYear with
-    | true ->  PriorCase
-    | false -> NewCase
+let getIndividualsServed
+    (lynxRow: LynxRow)
+    (grantYearStart: System.DateOnly)
+    : Result<IOIBString, string> =
 
-let getAgeAtApplication (lynxRow: LynxRow) (grantYearStart: System.DateOnly) : AgeAtApplication =
-    let getAge (lynxRow: LynxRow) (grantYearStart: System.DateOnly) =
-        let grantYearStartInDays = grantYearStart.DayNumber
-        let birthDateInDays = lynxRow.intake_birth_date.DayNumber
-        // Sloppy accomodation for leap years
-        (float (grantYearStartInDays - birthDateInDays)) / 365.25
+    match lynxRow.intake_intake_date with
+    | None ->
+        Error "Intake date is missing in LYNX."
+    | Some intakeDate ->
+        match (intakeDate < grantYearStart) with
+        | true  -> Ok PriorCase
+        | false -> Ok NewCase
 
-    let age = getAge lynxRow grantYearStart
+let getAgeAtApplication
+    (lynxRow: LynxRow)
+    (grantYearStart: System.DateOnly)
+    : Result<IOIBString, string> =
+
     match lynxRow.intake_birth_date with
-    // NOTE 2023-12-10_2006
-    // There are (or will be) age brackets younger
-    // than 55, but that is probably a clerical
-    // error as the SIP program is only for
-    // individuals above 55.
-    //
-    // TODO 2023-12-10_2009 Replace `failtwith`s with a visual cue in the OIB report
-    //
-    | None -> failwith $"No birth date in LYNX. Client: {lynxRow.contact_id} {getClientName lynxRow}."
-    | _ when age < 55 -> failwith $"Age below 55 not in OIB report. Client: {lynxRow.contact_id} {getClientName lynxRow}."
-    | _ when age < 65 -> AgeBracket55To64
-    | _ when age < 75 -> AgeBracket65To74
-    | _ when age < 85 -> AgeBracket75To84
-    |              _  -> AgeBracket85AndOlder
+    | None ->
+        Error $"Birth date is missing in LYNX. (Contact ID: {lynxRow.contact_id})"
+    | Some (birthDate: System.DateOnly) ->
+        let grantYearStartInDays = grantYearStart.DayNumber
+        let birthDateInDays = birthDate.DayNumber
+        // Sloppy accomodation for leap years
+        let age = (float (grantYearStartInDays - birthDateInDays)) / 365.25
 
-let getGender (lynxRow: LynxRow) : Gender =
-    match lynxRow.intake_gender with
-    | Some gender when gender = (toOIBString Male)   -> Male
-    | Some gender when gender = (toOIBString Female) -> Female
-    | Some other -> failwith $"Gender '{other}' not in OIB report. Client: {lynxRow.contact_id} {getClientName lynxRow}."
-    | None   -> DidNotSelfIdentifyGender
+        match age with
+        // NOTE 2023-12-10_2006
+        // There  are  (or will  be) age brackets  younger than
+        // 55, but that is probably a clerical error as the SIP
+        // program is only for individuals above 55.
+        | _ when age < 55 ->
+            Error $"Age below 55. (Contact ID: {lynxRow.contact_id})"
+        | _ when age < 65 -> Ok AgeBracket55To64
+        | _ when age < 75 -> Ok AgeBracket65To74
+        | _ when age < 85 -> Ok AgeBracket75To84
+        |              _  -> Ok AgeBracket85AndOlder
+
+let (|OIBString|_|) (v: IOIBString) (field: Option<'a>) =
+    match field with
+    | Some f ->
+        f.ToString() = (toOIBString v)
+        |> Some
+    | None   -> None
+
+let (|OIBValue|_|) (iOIBStringType: System.Type) (field: string) =
+
+    if (not <| typeof<IOIBString>.IsAssignableFrom(iOIBStringType))
+    then failwith $"Type {iOIBStringType.FullName} does not implement the `IOIBString` interface."
+
+    let caseToTuples (caseInfo: UnionCaseInfo) =
+        let unionCase =
+            FSharpValue.MakeUnion(caseInfo, [||]) :?> IOIBString
+        ( (toOIBString unionCase)
+        , unionCase
+        )
+
+    let valueMap=
+        iOIBStringType
+        |> FSharpType.GetUnionCases
+        |> Array.map caseToTuples
+        |> Map.ofArray
+
+    match (Map.tryFind field valueMap) with
+    | None   -> None
+    | some -> some
+
+let getOIBValues (iOIBStringType: System.Type) (field: string) =
+
+    // Could not figure out how to constrain `System.Type`
+    // in the  function signature to only  allow types that
+    // implement the `IOIBSring` interface.
+    // Anyway, not pretty, but at least it fails fast.
+    if (not <| typeof<IOIBString>.IsAssignableFrom(iOIBStringType))
+    then failwith $"Type {iOIBStringType.FullName} does not implement the `IOIBString` interface."
+
+    let caseToTuples (caseInfo: UnionCaseInfo) =
+        let unionCase =
+            FSharpValue.MakeUnion(caseInfo, [||]) :?> IOIBString
+        ( (toOIBString unionCase)
+        , unionCase
+        )
+
+    let valueMap =
+        iOIBStringType
+        |> FSharpType.GetUnionCases
+        |> Array.map caseToTuples
+        |> Map.ofArray
+
+    valueMap
+    // match (Map.tryFind field fieldValueMap) with
+    // | Some fieldValue -> fieldValue
+    // | None            ->
+
+let getOIBValues' (v: IOIBString) (field: 'a) =
+
+    let getUnionTypeName (case: obj) =
+        let caseType = case.GetType()
+        FSharpType.GetUnionCases(caseType).[0].DeclaringType
+
+    getOIBValues (getUnionTypeName v) field
+
+let getGender (lynxRow: LynxRow) : Result<IOIBString, string> =
+    let gender =
+        match lynxRow.intake_gender with
+        // Using `getValues` here will not result
+        // in any simplification
+        | OIBString Male   true -> Male
+        | OIBString Female true -> Female
+        // Took  the   easy  way   out,  and   converting  all
+        // non-conforming values that have accumulated over the
+        // years to the neutral option.
+        | Some _
+        | None   -> DidNotSelfIdentifyGender
+    Ok gender
 
 let getRace (lynxRow: LynxRow) : Race =
     match lynxRow.intake_ethnicity with
+    | OIBString NativeAmerican true ->
+    | OIBString Asian true ->
+    | OIBString AfricanAmerican true ->
+    | OIBString PacificIslanderOrNativeHawaiian true ->
+    | OIBString White true ->
+    | OIBString DidNotSelfIdentifyRace true ->
+    | OIBString TwoOrMoreRaces true ->
+
     | Some race when race = (toOIBString NativeAmerican) ->
         NativeAmerican
     | Some race when race = (toOIBString Asian) ->
