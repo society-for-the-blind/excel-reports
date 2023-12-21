@@ -3,6 +3,7 @@ module ExcelReports.LynxData
 (*
 #r "nuget: Npgsql.FSharp, 5.7.0";;
 #load "ExcelReports/LynxData.fs";;
+open ExcelReports.LynxData;;
 *)
 
 open System
@@ -165,6 +166,8 @@ type LynxRow = {
     plan_community_plan_progress : string option;
     plan_ila_outcomes            : string option;
     plan_living_plan_progress    : string option;
+
+    address_county : string option;
 }
 
 type LynxQuery = LynxRow list
@@ -201,9 +204,10 @@ let lynxQuery (connectionString: string) (grantYear: int) : LynxData =
 
     let joins = """
          lynx_sipnote AS note
-    JOIN lynx_contact AS contact ON   note.contact_id = contact.id
-    JOIN lynx_sipplan AS plan    ON  note.sip_plan_id = plan.id
-    JOIN lynx_intake  AS intake  ON intake.contact_id = contact.id
+    JOIN lynx_contact AS contact ON    note.contact_id = contact.id
+    JOIN lynx_sipplan AS plan    ON   note.sip_plan_id = plan.id
+    JOIN lynx_intake  AS intake  ON  intake.contact_id = contact.id
+    JOIN lynx_address AS address ON address.contact_id = contact.id
     """
 
     let baseSelect = "SELECT " + queryColumns + " FROM " + joins

@@ -2,6 +2,7 @@ module ExcelReports.OIBTypes
 
 (*
 #load "ExcelReports/OIBTypes.fs";;
+open ExcelReports.OIBTypes;;
 *)
 
 // NOTE 2023-12-03_2153
@@ -161,6 +162,10 @@ type CognitiveImpairment     = YesOrNo
 type MentalHealthImpairment  = YesOrNo
 type OtherImpairment         = YesOrNo
 
+// TODO This may be an unnecessary complication.
+// Yes, these column are grouped under this name,
+// but it will just complicate the `DemographicsRow`
+// type, which would otherwise be a tagged tuple.
 type AgeRelatedImpairmentSubrow =
     AgeRelatedImpairments of
         ( HearingImpairment
@@ -291,6 +296,7 @@ type DemographicsColumn =
     | AS_BE of SourceOfReferral             // "AS7:BE7"
     | BF    of County                       // "BF7"
 
+// TODO 2023-12-20_2107 I don't think this is needed.
 // A row in the "PART III-DEMOGRAPHICS" sheet
 type DemographicsRow =
     // PONDER 2023-12-17_2233
@@ -332,7 +338,13 @@ type DemographicsRow =
         // in `ExcelReports/LynxData.fs`.
         * DegreeOfVisualImpairment     // "W7:Z7"
         * MajorCauseOfVisualImpairment // "AA7:AF7"
-        * AgeRelatedImpairmentSubrow   // "AG7:AL7"
+        // * AgeRelatedImpairmentSubrow   // "AG7:AL7"
+        * HearingImpairment // "AG7"
+        * MobilityImpairment // "AH7"
+        * CommunicationImpairment // "AI7"
+        * CognitiveImpairment // "AJ7"
+        * MentalHealthImpairment // "AK7"
+        * OtherImpairment // "AL7"
         * TypeOfResidence              // "AM7:AR7"
         * SourceOfReferral             // "AS7:BE7"
         * County                       // "BF7"

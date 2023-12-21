@@ -1,7 +1,11 @@
 module ExcelReports.ExcelFunctions
 
 // #r "nuget: DocumentFormat.OpenXml, 2.8.1"
-// #r "nuget: NPOI, 2.6.2"
+(*
+#r "nuget: NPOI, 2.6.2"
+#load "ExcelReports/OIBTypes.fs";;
+open ExcelReports.ExcelFunctions;;
+*)
 
 open NPOI
 

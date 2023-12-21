@@ -1,5 +1,21 @@
 ﻿module ExcelReports.OIB
 
+(*
+#r "nuget: NPOI, 2.6.2"
+#load "ExcelReports/ExcelFunctions.fs";;
+open ExcelReports.ExcelFunctions;;
+
+#r "nuget: Npgsql.FSharp, 5.7.0";;
+#load "ExcelReports/LynxData.fs";;
+open ExcelReports.LynxData;;
+
+#load "ExcelReports/OIBTypes.fs";;
+open ExcelReports.OIBTypes;;
+
+#load "ExcelReports/Library.fs";;
+open ExcelReports.OIB;;
+*)
+
 open ExcelFunctions
 open LynxData
 open OIBTypes
@@ -9,13 +25,13 @@ open FSharp.Reflection
 // The name of the opened Excel file is the version
 // of this module.
 
-let xls = openExcelFileWithNPOI "../20231011_protected_7-OB_Report-Data-Collection-Tool_V2.xlsx"
+// let xls = openExcelFileWithNPOI "20231011_protected_7-OB_Report-Data-Collection-Tool_V2.xlsx"
 
 // Client names and demographic info has to be entered
 // on  sheet "PART  III-DEMOGRAPHICS"  (4th sheet,  but
 // NPOI indexing is zero-based) starting from cell "A7"
 // (see "Instructions" sheet for details).
-let demoA7 = getCell xls 3 "A7"
+// let demoA7 = getCell xls 3 "A7"
 
 // To get list validation values quickly
 let gv (cell: ICell) =
@@ -62,7 +78,7 @@ let getClientName (lynxRow: LynxRow): Result<IOIBString, string> =
         Error $"Client name is missing in LYNX. (Contact ID: {lynxRow.contact_id})"
     | (Some last, Some first) ->
         let name = (last + ", " + first + " " + middleName.Trim())
-        Ok (A <| ClientName name)
+        Ok (ClientName name)
 
 let getIndividualsServed
     (lynxRow: LynxRow)
@@ -103,6 +119,7 @@ let getAgeAtApplication
         | _ when age < 85 -> Ok AgeBracket75To84
         |              _  -> Ok AgeBracket85AndOlder
 
+// TODO Delete if not used anywhere
 let (|OIBString|_|) (v: IOIBString) (field: Option<'a>) =
     match field with
     | Some f ->
@@ -132,295 +149,245 @@ let (|OIBValue|_|) (iOIBStringType: System.Type) (field: string) =
     | None   -> None
     | some -> some
 
-let getOIBValues (iOIBStringType: System.Type) (field: string) =
+let (|OIBCase|_|)
+    (iOIBStringType: System.Type)
+    (nonOIB: Result<IOIBString, string> option)
+    (field: string option) =
 
-    // Could not figure out how to constrain `System.Type`
-    // in the  function signature to only  allow types that
-    // implement the `IOIBSring` interface.
-    // Anyway, not pretty, but at least it fails fast.
-    if (not <| typeof<IOIBString>.IsAssignableFrom(iOIBStringType))
-    then failwith $"Type {iOIBStringType.FullName} does not implement the `IOIBString` interface."
+    match field with
+    | Some v ->
+        match v with
+        | OIBValue iOIBStringType case -> Some (Ok case)
+        | other ->
+            ( (Error $"Value '{other}' in Lynx is not a valid OIB option.")
+            , nonOIB
+            )
+            ||> Option.defaultValue
+            |> Some
+    | None -> Some (Error "Value is missing in LYNX.")
 
-    let caseToTuples (caseInfo: UnionCaseInfo) =
-        let unionCase =
-            FSharpValue.MakeUnion(caseInfo, [||]) :?> IOIBString
-        ( (toOIBString unionCase)
-        , unionCase
-        )
+// TODO Delete if not used anywhere
+let getUnionType (case: obj) =
+    let caseType = case.GetType()
+    FSharpType.GetUnionCases(caseType).[0].DeclaringType
 
-    let valueMap =
-        iOIBStringType
-        |> FSharpType.GetUnionCases
-        |> Array.map caseToTuples
-        |> Map.ofArray
-
-    valueMap
-    // match (Map.tryFind field fieldValueMap) with
-    // | Some fieldValue -> fieldValue
-    // | None            ->
-
-let getOIBValues' (v: IOIBString) (field: 'a) =
-
-    let getUnionTypeName (case: obj) =
-        let caseType = case.GetType()
-        FSharpType.GetUnionCases(caseType).[0].DeclaringType
-
-    getOIBValues (getUnionTypeName v) field
-
-let getGender (lynxRow: LynxRow) : Result<IOIBString, string> =
-    let gender =
-        match lynxRow.intake_gender with
-        // Using `getValues` here will not result
-        // in any simplification
-        | OIBString Male   true -> Male
-        | OIBString Female true -> Female
-        // Took  the   easy  way   out,  and   converting  all
-        // non-conforming values that have accumulated over the
-        // years to the neutral option.
-        | Some _
-        | None   -> DidNotSelfIdentifyGender
-    Ok gender
-
-let getRace (lynxRow: LynxRow) : Race =
-    match lynxRow.intake_ethnicity with
-    | OIBString NativeAmerican true ->
-    | OIBString Asian true ->
-    | OIBString AfricanAmerican true ->
-    | OIBString PacificIslanderOrNativeHawaiian true ->
-    | OIBString White true ->
-    | OIBString DidNotSelfIdentifyRace true ->
-    | OIBString TwoOrMoreRaces true ->
-
-    | Some race when race = (toOIBString NativeAmerican) ->
-        NativeAmerican
-    | Some race when race = (toOIBString Asian) ->
-        Asian
-    | Some race when race = (toOIBString AfricanAmerican) ->
-        AfricanAmerican
-    | Some race when race = (toOIBString PacificIslanderOrNativeHawaiian) ->
-        PacificIslanderOrNativeHawaiian
-    | Some race when race = (toOIBString White) ->
-        White
-    | Some race when race = (toOIBString TwoOrMoreRaces) ->
-        TwoOrMoreRaces
-    | Some race when race = (toOIBString DidNotSelfIdentifyRace) ->
-        DidNotSelfIdentifyRace
-    // HISTORICAL NOTE 2023-12-10_2222
-    // LYNX  used  to  treat  the OIB  report's "Race"  and
-    // "Ethnicity"  columns  in  one  field,  resulting  in
-    // leaking  information.  The  workaround was  that  if
-    // someone is  "Hispanic or Latino", then  the client's
-    // race  was   set  to  "2  or   more  races",  instead
-    // of  guessing.  (See  also  TODO  2023-12-02_2230  in
-    // LynxData.fs; there may be more.)
-    | Some "Hispanic or Latino" ->
-        TwoOrMoreRaces
-    // HISTORICAL NOTE 2023-12-10_2232
-    // Another LYNX travesty: there was an "Other" option on
-    // the  frontend that  had no corresponding value in the
-    // OIB report.
-    | Some "Other" ->
-        DidNotSelfIdentifyRace
-    | Some other ->
-        failwith $"Race '{other}' not in OIB report. Client: {lynxRow.contact_id} {getClientName lynxRow}."
-    | None ->
-        DidNotSelfIdentifyRace
-
-let getEthnicity (lynxRow: LynxRow) : HispanicOrLatino =
+let getEthnicity (lynxRow: LynxRow) : Result<IOIBString, string> =
     // See HISTORICAL NOTEs 2023-12-10_2222 and
     // 2023-12-10_2232 in `getRace`.
-    match (lynxRow.intake_ethnicity, lynxRow.intake_other_ethnicity) with
-    | (Some "Hispanic or Latino", _) -> Yes
-    | (None, Some _)                 -> No
-    | (_, Some "Hispanic or Latino") -> Yes
-    | (_, Some _)                    -> No
-    | (_, None)                      -> No
-    // | (Some this, Some that) -> failwith $"Race {this}, Ethnicity {that}. Client: {lynxRow.contact_id} {getClientName lynxRow}."
-    // | (None, Some that) -> failwith $"Race None, Ethnicity {that}. Client: {lynxRow.contact_id} {getClientName lynxRow}."
+    // -> FOLLOW-UP NOTE 2023-12-20_1156
+    //    Decided  to go with the "codify the constraints that
+    //    reflect how  things should be" approach,  instead of
+    //    the "cater to buggy behaviors in the past" way.
+    // -> FOLLOW-UP NOTE 2023-12-20_1210
+    //    Haha,  lofty ideas  go brrr.  The `other_ethnicity`
+    //    column is mostly `null`, and  I don't dare to change
+    //    ca. 20000 rows and see  what breaks. Let's keep this
+    //    noble task for the re-implementation of the LYNX.
 
-let getDegreeOfVisualImpairment (lynxRow: LynxRow) : DegreeOfVisualImpairment =
+    //                 OIB race                  OIB ethnicity
+    //             ----------------          ----------------------
+    match (lynxRow.intake_ethnicity, lynxRow.intake_other_ethnicity) with
+    | (Some "Hispanic or Latino", _) -> Ok Yes
+    | (None, Some _)                 -> Ok No
+    | (_, Some "Hispanic or Latino") -> Ok Yes
+    | (_, Some _)                    -> Ok No
+    | (_, None)                      -> Ok No
+
+let getDegreeOfVisualImpairment (lynxRow: LynxRow) : Result<IOIBString, string> =
+    let degreeType = typeof<DegreeOfVisualImpairment>
     match lynxRow.intake_degree with
-    | Some degree when degree = (toOIBString TotallyBlind) ->
-        TotallyBlind
-    | Some "Totally Blind (NP or NLP)" ->
-        TotallyBlind
-    | Some degree when degree = (toOIBString LegallyBlind) ->
-        LegallyBlind
-    | Some degree when degree = (toOIBString SevereVisionImpairment) ->
-        SevereVisionImpairment
     // Historical LYNX options
-    | Some "Light Perception Only" ->
-        LegallyBlind
-    | Some "Low Vision" ->
-        SevereVisionImpairment
+    | Some "Light Perception Only" -> Ok LegallyBlind
+    | Some "Low Vision" -> Ok SevereVisionImpairment
+    | Some "Totally Blind (NP or NLP)" -> Ok TotallyBlind
+    | OIBCase degreeType None result -> result
+
     // TODO 2023-12-11_1617
     // The "degree of visual impairment" in the OIB
     // report is mandatory.
     // TODO 2023-12-10_2009 Replace `failtwith`s with a visual cue in the OIB report
-    | None -> failwith $"Degree of visual impairment is null in LYNX. Client: {lynxRow.contact_id} {getClientName lynxRow}."
+    // | None -> failwith $"Degree of visual impairment is null in LYNX. Client: {lynxRow.contact_id} {getClientName lynxRow}."
     // TODO 2023-12-10_2009 Replace `failtwith`s with a visual cue in the OIB report
-    | Some other -> failwith $"Degree of visual impairment '{other}' not in OIB report. Client: {lynxRow.contact_id} {getClientName lynxRow}."
+    // | Some other -> failwith $"Degree of visual impairment '{other}' not in OIB report. Client: {lynxRow.contact_id} {getClientName lynxRow}."
 
-let getMajorCauseOfVisualImpairment (lynxRow: LynxRow) : MajorCauseOfVisualImpairment =
-    match lynxRow.intake_eye_condition with
-    | Some eyeCondition when eyeCondition = (toOIBString MacularDegeneration) ->
-        MacularDegeneration
-    | Some eyeCondition when eyeCondition = (toOIBString DiabeticRetinopathy) ->
-        DiabeticRetinopathy
-    | Some eyeCondition when eyeCondition = (toOIBString Glaucoma) ->
-        Glaucoma
-    | Some eyeCondition when eyeCondition = (toOIBString Cataracts) ->
-        Cataracts
-    | Some eyeCondition when eyeCondition = (toOIBString OtherCausesOfVisualImpairment) ->
-        OtherCausesOfVisualImpairment
-    // NOTE 2023-12-11_1920
-    // Clients imported from the old system have all
-    // kinds of entries because it didn't have a
-    // dropdown, but a text field.
-    | Some _ -> OtherCausesOfVisualImpairment
-    | None   -> OtherCausesOfVisualImpairment
+// === HELPERS
+let getColumn
+    (columnType: System.Type)
+    (nonOIBDefault: Result<IOIBString, string> option)
+    (lynxColumn: string option) : Result<IOIBString, string> =
 
-let getAgeRelatedImpairmentColumns (lynxRow: LynxRow) : AgeRelatedImpairmentColumns =
+    match lynxColumn with
+    | OIBCase columnType nonOIBDefault result ->
+        result
 
-    // === HELPERS
-    let hasImpairment (lynxColumns: bool list) : YesOrNo =
-        match (List.contains true lynxColumns) with
-        | true -> Yes
-        | false -> No
+// Caching is needed because OIB types with many cases
+// (such as  `County`) take 10s of  seconds to convert.
+// (I  tried `Map`  at first,  but couldn't  get it  to
+// work,  and `ConcurrentDictionary`  was suggested  by
+// copilot.)
+let cache =
+    System.Collections.Concurrent.ConcurrentDictionary<
+        ( System.Type
+        * Result<IOIBString,string> option
+        * string option
+        )
+    , Result<IOIBString,string>>()
 
-    let optstringToBool (optstring: string option) : bool =
-        match optstring with
-        | Some _ -> true
-        | None   -> false
-    // `optstring |> Option.isNone |> not` is shorter, but more obscure
-    // ===
+let getColumnCached typeOpt field row =
+    let key = (typeOpt, field, row)
+    match cache.TryGetValue(key) with
+    | true, value -> value
+    | _ ->
+        let value = getColumn typeOpt field row
+        cache.[key] <- value
+        value
 
-    let getHearingImpairment (lynxRow: LynxRow) : HearingImpairment =
-        match lynxRow.intake_hearing_loss with
-        | true -> Yes
-        | false -> No
+let hasImpairment (lynxColumns: bool option list) : Result<IOIBString, string> =
 
-    let getMobilityImpairment (lynxRow: LynxRow) : MobilityImpairment =
-        match lynxRow.intake_mobility with
-        | true -> Yes
-        | false -> No
+    let optTrueOrNone = function
+        | Some b -> b
+        | None -> false
 
-    let getCommunicationImpairment (lynxRow: LynxRow) : CommunicationImpairment =
-        match lynxRow.intake_communication with
-        | true -> Yes
-        | false -> No
+    match lynxColumns with
+    // Association of LYNX fields and "ager-related
+    // impairment" OIB columns:
+    //
+    //   `intake_hearing_loss`  <-> HearingImpairment
+    //   `intake_mobility`      <-> MobilityImpairment
+    //   `intake_communication` <-> CommunicationImpairment
+    //
+    //   `intake_alzheimers`          <->
+    //   `intake_learning_disability` <-> CognitiveImpairment
+    //   `intake_memory_loss`         <->
+    //   `intake_mental_health`   <->
+    //   `intake_substance_abuse` <-> MentalHealthImpairment
+    //   `lynxRow.intake_geriatric`       <->
+    //   `lynxRow.intake_stroke`          <->
+    //   `lynxRow.intake_seizure`         <->
+    //   `lynxRow.intake_migraine`        <->
+    //   `lynxRow.intake_heart`           <->
+    //   `lynxRow.intake_diabetes`        <->
+    //   `lynxRow.intake_dialysis`        <->
+    //   `lynxRow.intake_cancer`          <-> OtherImpairment
+    //   `lynxRow.intake_arthritis`       <->
+    //   `lynxRow.intake_high_bp`         <->
+    //   `lynxRow.intake_neuropathy`      <->
+    //   `lynxRow.intake_pain`            <->
+    //   `lynxRow.intake_asthma`          <->
+    //   `lynxRow.intake_musculoskeletal` <->
+    //   `lynxRow.intake_allergies        <->
+    //   `lynxRow.intake_dexterity`       <->
+    //
+    // In the case of the first 3, the presence of a value is crucial. The rest of the OIB columns are computed from multiple LYNX fields, so they can get away with a few missing values, but if all are missing, then then a human has to look into what is happening.
 
-    let getCognitiveImpairment (lynxRow: LynxRow) : CognitiveImpairment =
-        [ lynxRow.intake_alzheimers
-        ; lynxRow.intake_learning_disability
-        ; lynxRow.intake_memory_loss
-        ]
-        |> hasImpairment
-
-    let getMentalHealthImpairment (lynxRow: LynxRow) : MentalHealthImpairment =
-        [ (lynxRow.intake_mental_health |> optstringToBool)
-        ; lynxRow.intake_substance_abuse
-        ]
-        |> hasImpairment
-
-    let getOtherImpairment (lynxRow: LynxRow) : OtherImpairment =
-        [ lynxRow.intake_geriatric
-        ; lynxRow.intake_stroke
-        ; lynxRow.intake_seizure
-        ; lynxRow.intake_migraine
-        ; lynxRow.intake_heart
-        ; lynxRow.intake_diabetes
-        ; lynxRow.intake_dialysis
-        ; lynxRow.intake_cancer
-        ; lynxRow.intake_arthritis
-        ; lynxRow.intake_high_bp
-        ; lynxRow.intake_neuropathy
-        ; lynxRow.intake_pain
-        ; lynxRow.intake_asthma
-        ; lynxRow.intake_musculoskeletal
-        ; (lynxRow.intake_allergies |> optstringToBool)
-        ; lynxRow.intake_dexterity
-        ]
-        |> hasImpairment
-
-    AgeRelatedImpairments
-        ( getHearingImpairment lynxRow
-        , getMobilityImpairment lynxRow
-        , getCommunicationImpairment lynxRow
-        , getCognitiveImpairment lynxRow
-        , getMentalHealthImpairment lynxRow
-        , getOtherImpairment lynxRow
+    | _ when List.forall ((=) None) lynxColumns ->
+        Error "Value is missing in LYNX."
+    | _ ->
+        lynxColumns
+        |> List.tryFind optTrueOrNone
+        |> (function
+            | Some (Some true) -> Ok Yes
+            | None -> Ok No
+            // Yes, the  `match` is  not exhaustive  without these
+            // cases,  but  they  will  never be  needed  based  on
+            // `tryFind`'s output. (Or shouldn't be, for that matter.)
+            //
+            // | Some (Some false) -> Ok No
+            // | Some (None) -> Error "Value is missing in LYNX."
         )
 
-let getTypeOfResidence (lynxRow: LynxRow) : TypeOfResidence =
+let getCognitiveImpairment (lynxRow: LynxRow) : Result<IOIBString, string> =
+    [ lynxRow.intake_alzheimers
+    ; lynxRow.intake_learning_disability
+    ; lynxRow.intake_memory_loss
+    ]
+    |> hasImpairment
+
+let getMentalHealthImpairment (lynxRow: LynxRow) : Result<IOIBString, string> =
+    [ ( lynxRow.intake_mental_health
+        |> Option.map (fun _ -> true)
+      )
+    ; lynxRow.intake_substance_abuse
+    ]
+    |> hasImpairment
+
+let getOtherImpairment (lynxRow: LynxRow) : Result<IOIBString, string> =
+    [ lynxRow.intake_geriatric
+    ; lynxRow.intake_stroke
+    ; lynxRow.intake_seizure
+    ; lynxRow.intake_migraine
+    ; lynxRow.intake_heart
+    ; lynxRow.intake_diabetes
+    ; lynxRow.intake_dialysis
+    ; lynxRow.intake_cancer
+    ; lynxRow.intake_arthritis
+    ; lynxRow.intake_high_bp
+    ; lynxRow.intake_neuropathy
+    ; lynxRow.intake_pain
+    ; lynxRow.intake_asthma
+    ; lynxRow.intake_musculoskeletal
+    ; ( lynxRow.intake_allergies
+        |> Option.map (fun _ -> true)
+      )
+    ; lynxRow.intake_dexterity
+    ]
+    |> hasImpairment
+
+let getTypeOfResidence (lynxRow: LynxRow) : Result<IOIBString, string> =
+    let residenceType = typeof<TypeOfResidence>
     match lynxRow.intake_residence_type with
-    | Some s when s = (toOIBString PrivateResidence) ->
-        PrivateResidence
-    | Some s when s = (toOIBString SeniorIndependentLiving) ->
-        SeniorIndependentLiving
-    | Some s when s = (toOIBString AssistedLivingFacility) ->
-        TypeOfResidence.AssistedLivingFacility
-    | Some s when s = (toOIBString NursingHome) ->
-        TypeOfResidence.NursingHome
-    | Some s when s = (toOIBString Homeless) ->
-        Homeless
     // Historical LYNX options
     | Some "Community Residential" ->
-        SeniorIndependentLiving
+        Ok SeniorIndependentLiving
     | Some "Skilled Nursing Care" ->
-        TypeOfResidence.NursingHome
+        Ok TypeOfResidence.NursingHome
     | Some "Assisted Living" ->
-        TypeOfResidence.AssistedLivingFacility
-    | Some _
-    | None ->
-        failwith $"Type of residence {lynxRow.intake_residence_type} not in OIB report. Client: {lynxRow.contact_id} {getClientName lynxRow}."
+        Ok TypeOfResidence.AssistedLivingFacility
+    | OIBCase residenceType None result ->
+        result
 
-let getSourceOfReferral (lynxRow: LynxRow) : SourceOfReferral =
+// ONLY DELETE AFTER THE HISTORICAL NOTE ARE MOVED TO THE DOCS!
+// let getRace (lynxRow: LynxRow) : Result<IOIBString, string> =
+//     let raceType = typeof<Race>
+//     match lynxRow.intake_ethnicity with
+//       // HISTORICAL NOTE 2023-12-10_2222
+//       // LYNX  used  to  treat  the OIB  report's "Race"  and
+//       // "Ethnicity"  columns  in  one  field,  resulting  in
+//       // leaking  information.  The  workaround was  that  if
+//       // someone is  "Hispanic or Latino", then  the client's
+//       // race  was   set  to  "2  or   more  races",  instead
+//       // of  guessing.  (See  also  TODO  2023-12-02_2230  in
+//       // LynxData.fs; there may be more.)
+//       // HISTORICAL NOTE 2023-12-10_2232
+//       // There was an "Other" option on the frontend that had
+//       // no corresponding value in the OIB report.
+//       // -> FOLLOW-UP NOTE 2023-12-20_1145
+//       //    Temporarily overriding the HISTORICAL NOTE  above
+//       //    to test `Error` results.
+//       //
+//       // | Some "Hispanic or Latino" -> Ok TwoOrMoreRaces
+//     | Some v ->
+//         match v with
+//         | OIBValue raceType race -> Ok race
+//         | other -> Error $"Value '{other}' in Lynx is not a valid OIB option."
+//     | None ->
+//         Error "Value is missing in LYNX."
 
 let createDemographicsRow (lynxRow: LynxRow) (grantYearStart: System.DateOnly) =
-    DemographicsRow
-        ( (lynxRow |> getClientName),
-          (getIndividualsServed lynxRow grantYearStart),
-          (getAgeAtApplication  lynxRow grantYearStart),
-          (lynxRow |> getGender),
-          (lynxRow |> getRace),
-          (lynxRow |> getEthnicity),
-          (lynxRow |> getDegreeOfVisualImpairment),
-          (lynxRow |> getMajorCauseOfVisualImpairment),
-          (lynxRow |> getAgeRelatedImpairmentColumns),
-          (lynxRow |> getTypeOfResidence),
-          (lynxRow |> getSourceOfReferral),
-          (lynxRow |> getCounty)
-        )
-
-//         * IndividualsServed            // "B7:D7"
-//         * AgeAtApplication             // "E7:I7"
-//         * Gender                       // "J7:M7"
-//         // TODO 2023-12-10_1726
-//         // Well, more like a note really, for when a
-//         // LYNX query (see `lynxQuery`) "row" needs
-//         // to be converted to a `DemographicsRow`.
-//         // LYNX has the `lynx_intake` columns
-//         // `ethnicity` and `other_ethnicity` that
-//         // correspond to `Race` and `Ethnicity`
-//         // respectively.
-//         //
-//         // The catch: `ethnicity` used to have all
-//         // race options from the OIB report PLUS the
-//         // ethnicity column (i.e., "Hispanic or
-//         // Latino"), and `other_ethnicity` is mostly
-//         // empty. So when `ethnicity` is "Hispanic
-//         // or Latino", it means that `Race` will
-//         // have to be set `TwoOrMoreRaces`... This
-//         // has just been fixed in LYNX, but this has
-//         // to be checked for backwards
-//         // compatibility.
-//         * Race                         // "N7:U7"
-//         * Ethnicity                    // "V7"
-//         * DegreeOfVisualImpairment     // "W7:Z7"
-//         * MajorCauseOfVisualImpairment // "AA7:AF7"
-//         * AgeRelatedImpairmentColumns  // "AG7:AL7"
-//         * TypeOfResidence              // "AM7:AR7"
-//         * SourceOfReferral             // "AS7:BE7"
-//         * County                       // "BF7"
-        // )
+    ( ( getClientName lynxRow )
+    , ( getIndividualsServed lynxRow grantYearStart )
+    , ( getAgeAtApplication  lynxRow grantYearStart )
+    , ( getColumnCached typeof<Gender> None lynxRow.intake_gender )
+    , ( getColumnCached typeof<Race> None lynxRow.intake_ethnicity )
+    , ( getEthnicity lynxRow )
+    , ( getColumnCached typeof<MajorCauseOfVisualImpairment> (Some <| Ok OtherCausesOfVisualImpairment) lynxRow.intake_eye_condition )
+    , ( hasImpairment [ lynxRow.intake_hearing_loss ] )
+    , ( hasImpairment [ lynxRow.intake_mobility ] )
+    , ( hasImpairment [ lynxRow.intake_communication ] )
+    , ( getCognitiveImpairment lynxRow )
+    , ( getMentalHealthImpairment lynxRow )
+    , ( getOtherImpairment lynxRow )
+    , ( getTypeOfResidence lynxRow )
+    , ( getColumnCached typeof<SourceOfReferral> None lynxRow.intake_referred_by )
+    , ( getColumnCached typeof<County> None lynxRow.address_county )
+    )
