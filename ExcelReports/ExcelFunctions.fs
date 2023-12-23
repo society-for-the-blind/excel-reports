@@ -3,7 +3,7 @@ module ExcelReports.ExcelFunctions
 // #r "nuget: DocumentFormat.OpenXml, 2.8.1"
 (*
 #r "nuget: NPOI, 2.6.2"
-#load "ExcelReports/OIBTypes.fs";;
+#load "ExcelReports/ExcelFunctions.fs";;
 open ExcelReports.ExcelFunctions;;
 *)
 
@@ -20,6 +20,8 @@ type CellReference     = SS.Util.CellReference
 type AreaReference     = SS.Util.AreaReference
 type IDataValidation   = SS.UserModel.IDataValidation
 type ValidationType    = SS.UserModel.ValidationType
+type IndexedColors     = SS.UserModel.IndexedColors
+type FillPattern       = SS.UserModel.FillPattern
 
 /// <summary>
 /// Opens an Excel file and returns the workbook.
@@ -40,6 +42,61 @@ let openExcelFileWithNPOI (filePath: string) : XSSFWorkbook =
 //     let row: IRow = sheet.GetRow(rowIndex)
 //     let cell: ICell = row.GetCell(columnIndex, MissingCellPolicy.CREATE_NULL_AS_BLANK)
 //     cell.SetCellValue value
+
+// let rgb: byte array = [|255uy; 192uy; 150uy|]
+
+// let o = openExcelFileWithNPOI "ExcelReports/20231208_protected_7-OB_Report-Data-Collection-Tool_V2.xlsx";;
+
+open System.Reflection
+
+let cloneCellStyle (cell: NPOI.XSSF.UserModel.XSSFCell)  =
+    let original = cell.CellStyle
+    // printfn "ORIGINAL: %A" original.FontIndex
+    let workbook = cell.Sheet.Workbook
+    let copy = workbook.CreateCellStyle()
+    let properties = original.GetType().GetProperties(BindingFlags.Public ||| BindingFlags.Instance)
+    for prop in properties do
+        // printfn "MAIN: %s --- %A" prop.Name (prop.GetValue(original))
+        if prop.CanRead && prop.CanWrite then
+            // printfn "IF: %s --- %A" prop.Name (prop.GetValue(original))
+            let value = prop.GetValue(original)
+            prop.SetValue(copy, value)
+    // `FontIndex` can only be set by the `SetFont` method.
+    // The line below solved  my style mismatch issues, but
+    // more complicated styles may  reveal other issues; to
+    // track down the culprit, the `printfn` statements can
+    // be used  to show which  properties cannot be  set in
+    // the `for` loop above.
+    copy.SetFont <| original.GetFont(workbook)
+    copy
+
+let hexStringToRGB (hexString: string) =
+    let isHexColor (color: string) =
+        "^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$"
+        |> fun regexPattern -> new System.Text.RegularExpressions.Regex(regexPattern)
+        |> fun regex -> regex.IsMatch(color)
+    match (isHexColor hexString) with
+    | false ->
+        failwith "Invalid hex color string."
+    | true ->
+        let hexString = hexString.TrimStart('#')
+        let r = System.Convert.ToByte(hexString.Substring(0, 2), 16)
+        let g = System.Convert.ToByte(hexString.Substring(2, 2), 16)
+        let b = System.Convert.ToByte(hexString.Substring(4, 2), 16)
+        [|r; g; b|]
+
+let changeCellColor (cell: ICell) (rgb: byte array) =
+    let xssfCell: NPOI.XSSF.UserModel.XSSFCell = cell :?> NPOI.XSSF.UserModel.XSSFCell
+    let newCellStyle: NPOI.SS.UserModel.ICellStyle = cloneCellStyle xssfCell
+    // newCellStyle.CloneStyleFrom(xssfCell.CellStyle)
+    match newCellStyle with
+    // match xssfCell.CellStyle with
+    | :? NPOI.XSSF.UserModel.XSSFCellStyle as xssfCellStyle ->
+        let color = new NPOI.XSSF.UserModel.XSSFColor(rgb)
+        xssfCellStyle.FillForegroundXSSFColor <- color
+        xssfCellStyle.FillPattern <- NPOI.SS.UserModel.FillPattern.SolidForeground
+    | _ -> failwith "'newCellStyle' cannot be cast to XSSFCellStyle"
+    xssfCell.CellStyle <- newCellStyle
 
 let updateCell (cell: ICell) (string: string) =
     cell.SetCellValue string
@@ -64,6 +121,14 @@ let getCell (workbook: XSSFWorkbook) (sheetNumber: int) (address: string) =
     let sheet: ISheet = workbook.GetSheetAt(sheetNumber)
     let cellAddress = new CellAddress (address)
     getCellByAddress sheet cellAddress
+
+let setCellFillColor (workbook: XSSFWorkbook) (cell: ICell) (color: IndexedColors) =
+    // cell.CellStyle
+    let c: NPOI.XSSF.UserModel.XSSFColor = new NPOI.XSSF.UserModel.XSSFColor(color)
+    let style = workbook.CreateCellStyle()
+    style.FillPattern <- FillPattern.SolidForeground
+    style.FillForegroundColor <- color.Index
+    cell.CellStyle <- style
 
 // NOTE 2023-11-27_10-24
 // Shelving this experiment to create a more meaningful type for cell
