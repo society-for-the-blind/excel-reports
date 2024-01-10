@@ -35,21 +35,26 @@ let (|GetType|_|) (ct: Type) (t: Type) =
     | false ->
         Some <| ( (t.FullName = ct.FullName), "" )
 
+// NOTE How to add new F# -> Npgsql.FSharp mapping?
+//      Check the `RowReader` type's members.
 let typeToRowReaderMember (t: Type) =
     let intType      = typeof<int>
     let stringType   = typeof<string>
     let boolType     = typeof<bool>
     let dateOnlyType = typeof<System.DateOnly>
+    let dateTimeType = typeof<System.DateTime>
 
     match t with
     | GetType intType      (true, "") -> "int"
     | GetType stringType   (true, "") -> "text"
     | GetType boolType     (true, "") -> "bool"
     | GetType dateOnlyType (true, "") -> "dateOnly"
+    | GetType dateTimeType (true, "") -> "dateTime"
+    | GetType dateTimeType (true, "option") -> "dateTimeOrNone"
     | GetType dateOnlyType (true, "option") -> "dateOnlyOrNone"
     | GetType stringType   (true, "option") -> "textOrNone"
     | GetType boolType     (true, "option") -> "boolOrNone"
-    | _ -> failwith $"NOT IMPLEMENTED: Type {t.FullName}."
+    | _ -> failwith $"TYPE {t.FullName} NOT IMPLEMENTED in `LynxData` MODULE'S `typeToRowReaderMember`."
 
 let toLynxColumn (fieldInfo: FieldInfo) : LynxColumn =
     // NOTE 2023-12-01_2227
@@ -92,11 +97,17 @@ type LynxRow = {
     //      in the  `lynxQuery` function in the
     //      `joins` variable.
 
-    contact_id          :    int;
+    // NOTE How to use SQL aliases?
+    //
+    //      See NOTE "add_SQL_aliases" before `lynxQuery`
+    //      function.
+
+    contact_id          :    int; // aliased! see NOTE "add_SQL_aliases"
     contact_last_name   : string option;
     contact_first_name  : string option;
     contact_middle_name : string option;
 
+    intake_id          : int; // aliased! see NOTE "add_SQL_aliases"
     intake_intake_date : System.DateOnly option;
     intake_birth_date  : System.DateOnly option;
     intake_gender      :          string option;
@@ -151,6 +162,11 @@ type LynxRow = {
     intake_residence_type      : string option; // | // type of residence
     intake_referred_by         : string option; // | // source of referral
 
+    // Without adding  `note_id` only the joint  rows would
+    // show  up where  the field  values are  distinct. Not
+    // sure what  the benefit  of forcing  ALL notes  to be
+    // present, but being explicit feels better.
+    note_id             : int; // aliased! see NOTE "add_SQL_aliases"
     note_at_devices     :            bool option;
     note_orientation    :            bool option;
     note_dls            :            bool option;
@@ -167,7 +183,9 @@ type LynxRow = {
     plan_ila_outcomes            : string option;
     plan_living_plan_progress    : string option;
 
-    address_county : string option;
+    mostRecentAddress_id       :    int; // aliased! see NOTE "add_SQL_aliases"
+    mostRecentAddress_modified : System.DateTime option;
+    mostRecentAddress_county   : string option;
 }
 
 type LynxQuery = LynxRow list
@@ -177,12 +195,15 @@ type LynxData = {
     lynxQuery : LynxQuery;
 }
 
+// Cannot be moved inside a function because of FS0665.
 let getRecordFieldNamesAndTypes<'T, 'U> (mapper: FieldInfo -> 'U) =
     typeof<'T>.GetFields(BindingFlags.Public ||| BindingFlags.Instance)
     |> Array.map mapper
 
-// let qtestodelete = connectionString |> Sql.connect |> Sql.query "select * from lynx_sipnote where id = 27555;" |> Sql.execute (fun (read: RowReader) -> read.text "note")
-
+// NOTE: add_SQL_aliases
+// 1. Update `match` in the `queryColumns` variable.
+// 2. Update `function` clause in the `exeReader` function.
+// 3. If something is still amiss, uncommend the `printfn` statements.
 let lynxQuery (connectionString: string) (grantYear: int) : LynxData =
 
     let (lynxCols: LynxColumn array) =
@@ -199,7 +220,14 @@ let lynxQuery (connectionString: string) (grantYear: int) : LynxData =
     let queryColumns =
         lynxCols
         |> Array.map (fun { ColumnName = n; ColumnType = _ } ->
-           replaceFirstOccurrence n ('_', '.');)
+            let alias =
+                match n with
+                | "contact_id" as a -> a + " AS contact_id"
+             // | "address_id" as a -> a + " AS address_id"
+                | "intake_id"  as a -> a + " AS intake_id"
+                | "note_id"    as a -> a + " AS note_id"
+                | rest -> rest
+            replaceFirstOccurrence alias ('_', '.');)
         |> String.concat ", "
 
     let joins = """
@@ -207,7 +235,15 @@ let lynxQuery (connectionString: string) (grantYear: int) : LynxData =
     JOIN lynx_contact AS contact ON    note.contact_id = contact.id
     JOIN lynx_sipplan AS plan    ON   note.sip_plan_id = plan.id
     JOIN lynx_intake  AS intake  ON  intake.contact_id = contact.id
-    JOIN lynx_address AS address ON address.contact_id = contact.id
+    JOIN (
+        SELECT address.id, address.contact_id, address.modified, address.county
+        FROM lynx_address AS address
+        JOIN (
+            SELECT contact_id, MAX(modified) AS most_recent
+            FROM lynx_address
+            GROUP BY contact_id
+        ) AS subq ON address.contact_id = subq.contact_id AND address.modified = subq.most_recent
+    ) AS mostRecentAddress ON mostRecentAddress.contact_id = contact.id
     """
 
     let baseSelect = "SELECT " + queryColumns + " FROM " + joins
@@ -220,6 +256,8 @@ let lynxQuery (connectionString: string) (grantYear: int) : LynxData =
 
     let query = $"{baseSelect} {whereClause}" // + "{groupByClause} {orderByClause}"
 
+    printfn $"QUERY: {query}"
+
     let exeReader (read: RowReader) : LynxRow =
 
         let callMethodDynamically (instance: obj) (methodName: string) (args: obj[]) =
@@ -231,9 +269,17 @@ let lynxQuery (connectionString: string) (grantYear: int) : LynxData =
         let constructorArgs =
             lynxCols
             |> Array.map (fun {ColumnName = n; ColumnType = t} ->
+                // printfn $"COLUMN NAME: {n}"
                 n
-                |> deleteUpToFirstUnderscore
-                |> fun columnName -> [| box columnName |]
+                |> function
+                    | "contact_id" as a -> a
+                 // | "address_id" as a -> a
+                    | "intake_id"  as a -> a
+                    | "note_id"    as a -> a
+                    | rest -> deleteUpToFirstUnderscore rest
+                |> fun columnName ->
+                    // printfn $"COLUMN NAME: {columnName}"
+                    [| box columnName |]
                 |> callMethodDynamically read (typeToRowReaderMember t)
                 |> box
             )
@@ -284,3 +330,53 @@ let lynxQuery (connectionString: string) (grantYear: int) : LynxData =
 // /Users/toraritte/dev/clones/dotNET/slate-excel-reports/stdin(1,1): error FS0999: /Users/toraritte/.packagemanagement/nuget/Projects/85296--b0cee205-014b-423f-951e-e8bd674cb3f1/Proje
 // ct.fsproj : error NU1202: Package SqlHydra.Cli 2.3.1 is not compatible with net8.0 (.NETCoreApp,Version=v8.0). Package SqlHydra.Cli 2.3.1 supports:
 // ====================
+
+let pairwiseFold (f: 'a -> 'a -> 'b) (xs: 'a seq) =
+    xs
+    |> Seq.pairwise
+    |> Seq.map ( fun (pair) -> pair ||> f )
+    |> Seq.distinct
+
+open System.Reflection
+
+let compareRecords record1 record2 =
+    let recordType = record1.GetType()
+    let fields = recordType.GetFields(BindingFlags.Public ||| BindingFlags.Instance)
+
+    fields
+    |> Array.filter (fun field -> not (obj.Equals(field.GetValue(record1), field.GetValue(record2))))
+    |> Array.map (fun field -> (field.Name, field.GetValue(record1), field.GetValue(record2)))
+
+// let filterByDifferingAddressCounty (lynxQuery: LynxQuery) =
+//     lynxQuery
+//     |> Seq.groupBy (fun row -> row.contact_id)
+//     |> Seq.filter (
+//             fun (_, rows) ->
+//                 rows
+//                 |> Seq.map (fun r -> r.address_id)
+//                 |> Seq.distinct
+//                 |> Seq.length > 1
+//             )
+//     |> Seq.map (
+//             fun (cid, rows) ->
+//                 let compared =
+//                     pairwiseFold
+//                         compareRecords
+//                         rows
+//                 ( cid, compared )
+//             )
+
+// let aaa record1 record2 =
+//     match (compareRecords record1 record2) with
+//     | [|("address_id@", id1, id2)|] -> Seq.maxBy (fun r -> r.address_id) [record1; record2]
+
+// Seq.map (fun r -> (r.address_id, r.contact_last_name));;
+
+//     lynxQuery
+//     |> Seq.filter (fun row -> not (List.contains row filteredRows))
+//     |> Seq.toList
+
+
+// TO FIND CLIENTS WHO HAVE MULTIPLE COUNTIES IN THEIR ADDRESS (because another crucial constraint is missing from LYNX)
+// qq.lynxQuery |> List.map (flip createDemographicsRow <| q.grantYearStart) |> Seq.groupBy (function | ((_, Ok c) :: _) -> toOIBString c | ((_, Error e) :: _) -> e) |> Seq.filter (fun (_, r) -> r |> Seq.distinct |> Seq.length > 1 ) |> Seq.map (fun (n, r) -> (n, (r |> Seq.distinct |> Seq.toList)));;
+

@@ -33,29 +33,6 @@ open FSharp.Reflection
 // (see "Instructions" sheet for details).
 // let demoA7 = getCell xls 3 "A7"
 
-// To get list validation values quickly
-let gv (cell: ICell) =
-    let getWorkbook (cell: ICell) = cell.Sheet.Workbook :?> XSSFWorkbook
-    let getSheetIndex (cell: ICell) = (getWorkbook cell).GetSheetIndex(cell.Sheet)
-
-    ( findDataValidation cell
-      |> Option.get).ValidationConstraint.Formula1
-      |> fun str -> str.Replace("$",""
-    )
-    |> convertCellRangeToList
-    |> List.map
-        (fun address ->
-            (address,
-            (getCell
-                (getWorkbook cell)
-                (getSheetIndex cell)
-                address).StringCellValue)
-        )
-    |> fun list -> ( ((findMergedRegion cell |> Option.get).FormatAsString()), list)
-
-let gev (cell: ICell) =
-    (findDataValidation cell |> Option.get).ValidationConstraint.ExplicitListValues
-
 // NOTE 2023-12-03_2348 subtract System.DateOnly instances
 //     let subtractDateOnly (d1: System.DateOnly) (d2: System.DateOnly) = d1.Year - d2.Year
 //
@@ -77,7 +54,7 @@ let getClientName (lynxRow: LynxRow): Result<IOIBString, string> =
     | (_, None) ->
         Error $"Client name is missing in LYNX. (Contact ID: {lynxRow.contact_id})"
     | (Some last, Some first) ->
-        let name = (last + ", " + first + " " + middleName.Trim())
+        let name = (last.Trim() + ", " + first.Trim() + " " + middleName.Trim())
         Ok (ClientName name)
 
 let getIndividualsServed
@@ -195,6 +172,12 @@ let getEthnicity (lynxRow: LynxRow) : Result<IOIBString, string> =
 
 let getDegreeOfVisualImpairment (lynxRow: LynxRow) : Result<IOIBString, string> =
     let degreeType = typeof<DegreeOfVisualImpairment>
+    // NOTE "FS0025: Incomplete pattern match" warning
+    //      The pattern  matches in  `OIBCase` active
+    //      pattern are  exhaustive, but  the compiler
+    //      has trouble figuring this out (plus, it is
+    //      a nested active pattern, but `OIBValue` is
+    //      also exhaustive).
     match lynxRow.intake_degree with
     // Historical LYNX options
     | Some "Light Perception Only" -> Ok LegallyBlind
@@ -216,6 +199,7 @@ let getColumn
     (nonOIBDefault: Result<IOIBString, string> option)
     (lynxColumn: string option) : Result<IOIBString, string> =
 
+    // See NOTE "FS0025: Incomplete pattern match" warning above
     match lynxColumn with
     | OIBCase columnType nonOIBDefault result ->
         result
@@ -374,20 +358,33 @@ let getTypeOfResidence (lynxRow: LynxRow) : Result<IOIBString, string> =
 //         Error "Value is missing in LYNX."
 
 let createDemographicsRow (lynxRow: LynxRow) (grantYearStart: System.DateOnly) =
-    ( ( getClientName lynxRow )
-    , ( getIndividualsServed lynxRow grantYearStart )
-    , ( getAgeAtApplication  lynxRow grantYearStart )
-    , ( getColumnCached typeof<Gender> None lynxRow.intake_gender )
-    , ( getColumnCached typeof<Race> None lynxRow.intake_ethnicity )
-    , ( getEthnicity lynxRow )
-    , ( getColumnCached typeof<MajorCauseOfVisualImpairment> (Some <| Ok OtherCausesOfVisualImpairment) lynxRow.intake_eye_condition )
-    , ( hasImpairment [ lynxRow.intake_hearing_loss ] )
-    , ( hasImpairment [ lynxRow.intake_mobility ] )
-    , ( hasImpairment [ lynxRow.intake_communication ] )
-    , ( getCognitiveImpairment lynxRow )
-    , ( getMentalHealthImpairment lynxRow )
-    , ( getOtherImpairment lynxRow )
-    , ( getTypeOfResidence lynxRow )
-    , ( getColumnCached typeof<SourceOfReferral> None lynxRow.intake_referred_by )
-    , ( getColumnCached typeof<County> None lynxRow.address_county )
+    [ ( "A", getClientName lynxRow )
+    ; ( "B", getIndividualsServed lynxRow grantYearStart )
+    ; ( "E", getAgeAtApplication  lynxRow grantYearStart )
+    ; ( "J", getColumnCached typeof<Gender> None lynxRow.intake_gender )
+    ; ( "N", getColumnCached typeof<Race> None lynxRow.intake_ethnicity )
+    ; ( "V", getEthnicity lynxRow )
+    ; ( "W", getDegreeOfVisualImpairment lynxRow )
+    ; ( "AA", getColumnCached typeof<MajorCauseOfVisualImpairment> (Some <| Ok OtherCausesOfVisualImpairment) lynxRow.intake_eye_condition )
+    ; ( "AG", hasImpairment [ lynxRow.intake_hearing_loss ] )
+    ; ( "AH", hasImpairment [ lynxRow.intake_mobility ] )
+    ; ( "AI", hasImpairment [ lynxRow.intake_communication ] )
+    ; ( "AJ", getCognitiveImpairment lynxRow )
+    ; ( "AK", getMentalHealthImpairment lynxRow )
+    ; ( "AL", getOtherImpairment lynxRow )
+    ; ( "AM", getTypeOfResidence lynxRow )
+    ; ( "AS", getColumnCached typeof<SourceOfReferral> None lynxRow.intake_referred_by )
+    ; ( "BF", getColumnCached typeof<County> None lynxRow.address_county )
+    ]
+
+let getDemographics (lynxData: LynxData) =
+    lynxData.lynxQuery
+    |> Seq.map (flip createDemographicsRow <| lynxData.grantYearStart)
+    |> Seq.groupBy (function
+        | ((_, Ok client) :: _) -> toOIBString client
+        | ((_, Error e) :: _) -> e
+        | [] -> failwith "empty row"
     )
+    // |> Seq.toList
+    // |> fun e -> e.Head
+    // |> fun (_, l) -> Seq.distinct l
