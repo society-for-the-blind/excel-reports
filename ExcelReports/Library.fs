@@ -104,6 +104,9 @@ let (|OIBString|_|) (v: IOIBString) (field: Option<'a>) =
         |> Some
     | None   -> None
 
+// TODO document `OIBValue` and `OIBCase` because
+//      only after 2 weeks of not looking at their
+//      implementation I barely understand what they do.
 let (|OIBValue|_|) (iOIBStringType: System.Type) (field: string) =
 
     if (not <| typeof<IOIBString>.IsAssignableFrom(iOIBStringType))
@@ -274,7 +277,9 @@ let hasImpairment (lynxColumns: bool option list) : Result<IOIBString, string> =
             | None -> Ok No
             // Yes, the  `match` is  not exhaustive  without these
             // cases,  but  they  will  never be  needed  based  on
-            // `tryFind`'s output. (Or shouldn't be, for that matter.)
+            // `tryFind`'s output. (Or shouldn't be, for that matter;
+            // and if they are, then the this will crash right away,
+            // so that's good.)
             //
             // | Some (Some false) -> Ok No
             // | Some (None) -> Error "Value is missing in LYNX."
@@ -357,51 +362,70 @@ let getTypeOfResidence (lynxRow: LynxRow) : Result<IOIBString, string> =
 //     | None ->
 //         Error "Value is missing in LYNX."
 
+type DemographicsRow = (string * Result<IOIBString, string>) list
+
 let createDemographicsRow (lynxRow: LynxRow) (grantYearStart: System.DateOnly) =
-    let demoColumns = 
-        [ ( "A", getClientName lynxRow )
-        ; ( "B", getIndividualsServed lynxRow grantYearStart )
-        ; ( "E", getAgeAtApplication  lynxRow grantYearStart )
-        ; ( "J", getColumnCached typeof<Gender> None lynxRow.intake_gender )
-        ; ( "N", getColumnCached typeof<Race> None lynxRow.intake_ethnicity )
-        ; ( "V", getEthnicity lynxRow )
-        ; ( "W", getDegreeOfVisualImpairment lynxRow )
-        ; ( "AA", getColumnCached typeof<MajorCauseOfVisualImpairment> (Some <| Ok OtherCausesOfVisualImpairment) lynxRow.intake_eye_condition )
-        ; ( "AG", hasImpairment [ lynxRow.intake_hearing_loss ] )
-        ; ( "AH", hasImpairment [ lynxRow.intake_mobility ] )
-        ; ( "AI", hasImpairment [ lynxRow.intake_communication ] )
-        ; ( "AJ", getCognitiveImpairment lynxRow )
-        ; ( "AK", getMentalHealthImpairment lynxRow )
-        ; ( "AL", getOtherImpairment lynxRow )
-        ; ( "AM", getTypeOfResidence lynxRow )
-        ; ( "AS", getColumnCached typeof<SourceOfReferral> None lynxRow.intake_referred_by )
-        ; ( "BF", getColumnCached typeof<County> None lynxRow.mostRecentAddress_county )
-        ]
-    // For troubleshooting (to be able to compare the rows with the transformed ones).
-    (demoColumns, lynxRow)
+    // let demoColumns = 
+    [ ( "A", getClientName lynxRow )
+    ; ( "B", getIndividualsServed lynxRow grantYearStart )
+    ; ( "E", getAgeAtApplication  lynxRow grantYearStart )
+    ; ( "J", getColumnCached typeof<Gender> None lynxRow.intake_gender )
+    ; ( "N", getColumnCached typeof<Race> None lynxRow.intake_ethnicity )
+    ; ( "V", getEthnicity lynxRow )
+    ; ( "W", getDegreeOfVisualImpairment lynxRow )
+    ; ( "AA", getColumnCached typeof<MajorCauseOfVisualImpairment> (Some <| Ok OtherCausesOfVisualImpairment) lynxRow.intake_eye_condition )
+    ; ( "AG", hasImpairment [ lynxRow.intake_hearing_loss ] )
+    ; ( "AH", hasImpairment [ lynxRow.intake_mobility ] )
+    ; ( "AI", hasImpairment [ lynxRow.intake_communication ] )
+    ; ( "AJ", getCognitiveImpairment lynxRow )
+    ; ( "AK", getMentalHealthImpairment lynxRow )
+    ; ( "AL", getOtherImpairment lynxRow )
+    ; ( "AM", getTypeOfResidence lynxRow )
+    ; ( "AS", getColumnCached typeof<SourceOfReferral> None lynxRow.intake_referred_by )
+    ; ( "BF", getColumnCached typeof<County> None lynxRow.mostRecentAddress_county )
+    ]
+    // // For troubleshooting (to be able to compare the rows with the transformed ones).
+    // (demoColumns, lynxRow)
 
 let getDemographics (lynxData: LynxData) =
-    let groupedByClient =
+    let rowsGroupedByClient =
         lynxData.lynxQuery
         |> Seq.map (flip createDemographicsRow <| lynxData.grantYearStart)
         |> Seq.groupBy (function
-            | ((_, Ok client) :: _, row) -> toOIBString client
-            | ((_, Error e) :: _, row) -> failwith e
-            | ([], _) -> failwith "empty row"
+            | ((_, Ok client) :: _) -> toOIBString client
+            | ((_, Error e)   :: _) -> failwith e
+            | ([]) -> failwith "empty row"
         )
 
-    let culledRows =
-        groupedByClient
-        |> Seq.map (fun (_client, demoRows) ->
-            Seq.distinct demoRows
-        )
+    rowsGroupedByClient
+    |> Seq.map (fun (_client, demoRows) ->
+        let consolidatedRows =
+            demoRows
+            |> Seq.distinct
+            |> Seq.toList
+        match consolidatedRows with
+        | [row] -> row
+        | _ -> failwith "A client has non-unique demographic rows."
+    )
 
-    match
-        (Seq.length culledRows) = (Seq.length groupedByClient)
-    with
-    | true  -> culledRows
-    | false -> failwith "A client has non-unique demographic rows."
+let enterDemographicsRow (dRow: DemographicsRow) (rowNumber: string) (xlsx: XSSFWorkbook) =
+    let errorColor = hexStringToRGB "#ffc096"
+    dRow
+    |> Seq.iter (
+        fun (column, result) ->
+            // let rowNum = string(i + 7)
+            let cell = getCell xlsx 3 (column + rowNumber)
+            let cellString =
+                match result with
+                | Ok oibValue ->
+                    toOIBString oibValue
+                | Error str ->
+                    changeCellColor cell errorColor
+                    "Error: " + str
+            updateCell cell cellString
+    )
 
+// --------------------------------------------------------------------
 let mergeServiceRows rowA rowB =
     (rowA, rowB)
     ||> Seq.zip
