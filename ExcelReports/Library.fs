@@ -358,33 +358,57 @@ let getTypeOfResidence (lynxRow: LynxRow) : Result<IOIBString, string> =
 //         Error "Value is missing in LYNX."
 
 let createDemographicsRow (lynxRow: LynxRow) (grantYearStart: System.DateOnly) =
-    [ ( "A", getClientName lynxRow )
-    ; ( "B", getIndividualsServed lynxRow grantYearStart )
-    ; ( "E", getAgeAtApplication  lynxRow grantYearStart )
-    ; ( "J", getColumnCached typeof<Gender> None lynxRow.intake_gender )
-    ; ( "N", getColumnCached typeof<Race> None lynxRow.intake_ethnicity )
-    ; ( "V", getEthnicity lynxRow )
-    ; ( "W", getDegreeOfVisualImpairment lynxRow )
-    ; ( "AA", getColumnCached typeof<MajorCauseOfVisualImpairment> (Some <| Ok OtherCausesOfVisualImpairment) lynxRow.intake_eye_condition )
-    ; ( "AG", hasImpairment [ lynxRow.intake_hearing_loss ] )
-    ; ( "AH", hasImpairment [ lynxRow.intake_mobility ] )
-    ; ( "AI", hasImpairment [ lynxRow.intake_communication ] )
-    ; ( "AJ", getCognitiveImpairment lynxRow )
-    ; ( "AK", getMentalHealthImpairment lynxRow )
-    ; ( "AL", getOtherImpairment lynxRow )
-    ; ( "AM", getTypeOfResidence lynxRow )
-    ; ( "AS", getColumnCached typeof<SourceOfReferral> None lynxRow.intake_referred_by )
-    ; ( "BF", getColumnCached typeof<County> None lynxRow.address_county )
-    ]
+    let demoColumns = 
+        [ ( "A", getClientName lynxRow )
+        ; ( "B", getIndividualsServed lynxRow grantYearStart )
+        ; ( "E", getAgeAtApplication  lynxRow grantYearStart )
+        ; ( "J", getColumnCached typeof<Gender> None lynxRow.intake_gender )
+        ; ( "N", getColumnCached typeof<Race> None lynxRow.intake_ethnicity )
+        ; ( "V", getEthnicity lynxRow )
+        ; ( "W", getDegreeOfVisualImpairment lynxRow )
+        ; ( "AA", getColumnCached typeof<MajorCauseOfVisualImpairment> (Some <| Ok OtherCausesOfVisualImpairment) lynxRow.intake_eye_condition )
+        ; ( "AG", hasImpairment [ lynxRow.intake_hearing_loss ] )
+        ; ( "AH", hasImpairment [ lynxRow.intake_mobility ] )
+        ; ( "AI", hasImpairment [ lynxRow.intake_communication ] )
+        ; ( "AJ", getCognitiveImpairment lynxRow )
+        ; ( "AK", getMentalHealthImpairment lynxRow )
+        ; ( "AL", getOtherImpairment lynxRow )
+        ; ( "AM", getTypeOfResidence lynxRow )
+        ; ( "AS", getColumnCached typeof<SourceOfReferral> None lynxRow.intake_referred_by )
+        ; ( "BF", getColumnCached typeof<County> None lynxRow.mostRecentAddress_county )
+        ]
+    // For troubleshooting (to be able to compare the rows with the transformed ones).
+    (demoColumns, lynxRow)
 
 let getDemographics (lynxData: LynxData) =
-    lynxData.lynxQuery
-    |> Seq.map (flip createDemographicsRow <| lynxData.grantYearStart)
-    |> Seq.groupBy (function
-        | ((_, Ok client) :: _) -> toOIBString client
-        | ((_, Error e) :: _) -> e
-        | [] -> failwith "empty row"
+    let groupedByClient =
+        lynxData.lynxQuery
+        |> Seq.map (flip createDemographicsRow <| lynxData.grantYearStart)
+        |> Seq.groupBy (function
+            | ((_, Ok client) :: _, row) -> toOIBString client
+            | ((_, Error e) :: _, row) -> failwith e
+            | ([], _) -> failwith "empty row"
+        )
+
+    let culledRows =
+        groupedByClient
+        |> Seq.map (fun (_client, demoRows) ->
+            Seq.distinct demoRows
+        )
+
+    match
+        (Seq.length culledRows) = (Seq.length groupedByClient)
+    with
+    | true  -> culledRows
+    | false -> failwith "A client has non-unique demographic rows."
+
+let mergeServiceRows rowA rowB =
+    (rowA, rowB)
+    ||> Seq.zip
+    |> Seq.map (fun ((column, valueA), (_, valueB)) ->
+        let shouldBeOneButIsIt =
+            ["A"; "B"; "E"; "J"; "N"; "V"; "W"; "AA"; "AG"; "AH"; "AI"; "AJ"; "AK"; "AL"; "AM"; "AS"; "BF"]
+        match valueA with
+        | Ok _ -> (column, valueA)
+        | Error _ -> (column, valueB)
     )
-    // |> Seq.toList
-    // |> fun e -> e.Head
-    // |> fun (_, l) -> Seq.distinct l
