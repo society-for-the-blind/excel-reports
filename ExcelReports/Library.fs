@@ -109,15 +109,27 @@ let getAgeAtApplication
     from  a LYNX  database column  to a  case of  an OIB
     discriminated union type  in `OIBTypes.fs` (the type
     argument  also  has  to implement  the  `IOIBString`
-    interface). For example:
+    interface).
+
+    Returns: on match -> IOIBString
+             no match -> string
+
+    For example:
 
         open OIBTypes
         let genderType = typeof<Gender>
 
         match "Female" with
-        | OIBValue genderType matchedCaseIfAny -> matchedCaseIfAny
+        | OIBValue genderType matchedCaseIfAny ->
+            matchedCaseIfAny // : IOIBString
         | other ->
+            // other : string
             failwith $"Value '{other}' in Lynx is not a valid OIB Gender option."
+
+        match "lofa" with
+        | OIBValue genderType matchedCaseIfAny -> toOIBString matchedCaseIfAny
+        | other -> other
+
 
     > Why **partial** active pattern?
     > -------------------------------
@@ -137,7 +149,10 @@ let getAgeAtApplication
          we in  fact need to whether  it matches or
          not.)
 *)
-let (|OIBValue|_|) (iOIBStringType: System.Type) (valueToMatch: string) =
+let (|OIBValue|_|)
+    (iOIBStringType: System.Type) // active pattern argument
+    (valueToMatch: string)
+    =
 
     if (not <| typeof<IOIBString>.IsAssignableFrom(iOIBStringType))
     then failwith $"Type {iOIBStringType.FullName} does not implement the `IOIBString` interface."
@@ -155,16 +170,36 @@ let (|OIBValue|_|) (iOIBStringType: System.Type) (valueToMatch: string) =
         |> Array.map caseToTuples
         |> Map.ofArray
 
-    match (Map.tryFind valueToMatch valueMap) with
-    | None   -> None
-    | some -> some
+    Map.tryFind valueToMatch valueMap
 
 (*
-    `OIBCase` partial active pattern
+    `OIBCase` wraps `OIBValue` to
+    + match `options string`  (instead of `string`)
+    + provide a default value when `OIBValue` fails
+      to  match  (if  `None`,  then  an  `Error` is
+      returned)
+
+    returns: Result
+
+    For example:
+
+        open OIBTypes
+        let genderType = typeof<Gender>
+
+        match (Some "Female") with
+        | OIBCase genderType None result -> result;;
+
+        match (Some "lofa") with
+        | OIBCase genderType (Some (Error "lofa")) result -> result;;
+
+    > Why **one-choice** active pattern?
+    > ----------------------------------
+    > Because  thanks to  the `returnIfMatchFails`,  it
+    > always returns a value (in this case, a `Result`).
 *)
 let (|OIBCase|)
     (iOIBStringType: System.Type)
-    (nonOIB: Result<IOIBString, string> option)
+    (returnIfMatchFails: Result<IOIBString, string> option)
     (valueToMatch: string option) =
 
     match valueToMatch with
@@ -173,7 +208,7 @@ let (|OIBCase|)
         | OIBValue iOIBStringType case -> Ok case
         | other ->
             ( (Error $"Value '{other}' in Lynx is not a valid OIB option.")
-            , nonOIB
+            , returnIfMatchFails
             )
             ||> Option.defaultValue
     | None -> Error "Value is missing in LYNX."
