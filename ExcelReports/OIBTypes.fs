@@ -274,81 +274,81 @@ type County =
 
 // TODO 2023-12-18_2336
 // Can this even be used in practice?
-type DemographicsColumn =
-    // Each union option is a column of singular or
-    // merged cells (see ranges in comments)
-    | A     of ClientName                   // "A7"
-    | B_D   of IndividualsServed            // "B7:D7"
-    | E_I   of AgeAtApplication             // "E7:I7"
-    | J_M   of Gender                       // "J7:M7"
-    | N_U   of Race                         // "N7:U7"
-    | V     of Ethnicity                    // "V7"
-    | W_Z   of DegreeOfVisualImpairment     // "W7:Z7"
-    | AA_AF of MajorCauseOfVisualImpairment // "AA7:AF7"
-    // Columns of `AgeRelatedImpairmentSubrow` "AG7:AL7"
-    | AG    of HearingImpairment
-    | AH    of MobilityImpairment
-    | AI    of CommunicationImpairment
-    | AJ    of CognitiveImpairment
-    | AK    of MentalHealthImpairment
-    | AL    of OtherImpairment
-    | AM_AR of TypeOfResidence              // "AM7:AR7"
-    | AS_BE of SourceOfReferral             // "AS7:BE7"
-    | BF    of County                       // "BF7"
+// type DemographicsColumn =
+//     // Each union option is a column of singular or
+//     // merged cells (see ranges in comments)
+//     | A     of ClientName                   // "A7"
+//     | B_D   of IndividualsServed            // "B7:D7"
+//     | E_I   of AgeAtApplication             // "E7:I7"
+//     | J_M   of Gender                       // "J7:M7"
+//     | N_U   of Race                         // "N7:U7"
+//     | V     of Ethnicity                    // "V7"
+//     | W_Z   of DegreeOfVisualImpairment     // "W7:Z7"
+//     | AA_AF of MajorCauseOfVisualImpairment // "AA7:AF7"
+//     // Columns of `AgeRelatedImpairmentSubrow` "AG7:AL7"
+//     | AG    of HearingImpairment
+//     | AH    of MobilityImpairment
+//     | AI    of CommunicationImpairment
+//     | AJ    of CognitiveImpairment
+//     | AK    of MentalHealthImpairment
+//     | AL    of OtherImpairment
+//     | AM_AR of TypeOfResidence              // "AM7:AR7"
+//     | AS_BE of SourceOfReferral             // "AS7:BE7"
+//     | BF    of County                       // "BF7"
 
 // TODO 2023-12-20_2107 I don't think this is needed.
 // A row in the "PART III-DEMOGRAPHICS" sheet
-type DemographicsRow =
-    // PONDER 2023-12-17_2233
-    // Should these be `DemoGraphicsColumn`? Or
-    // would that just be an exercise in pedantry?
-    // After all, the whole point of a tuple is that
-    // it can contain different types. Also, if
-    // `DemographicsColumn` is used, then it will be
-    // repeated 12 times ( e.g., `DemographicsColumn
-    // of DemographicsColumn * ...`), losing most of
-    // its meaning.
-    DemographicsRow of
-        ( ClientName                   // "A7"
-        * IndividualsServed            // "B7:D7"
-        * AgeAtApplication             // "E7:I7"
-        * Gender                       // "J7:M7"
-        // TODO 2023-12-10_1726
-        // Well, more like a note really, for when a
-        // LYNX query (see `lynxQuery`) "row" needs
-        // to be converted to a `DemographicsRow`.
-        // LYNX has the `lynx_intake` columns
-        // `ethnicity` and `other_ethnicity` that
-        // correspond to `Race` and `Ethnicity`
-        // respectively.
-        //
-        // The catch: `ethnicity` used to have all
-        // race options from the OIB report PLUS the
-        // ethnicity column (i.e., "Hispanic or
-        // Latino"), and `other_ethnicity` is mostly
-        // empty. So when `ethnicity` is "Hispanic
-        // or Latino", it means that `Race` will
-        // have to be set `TwoOrMoreRaces`... This
-        // has just been fixed in LYNX, but this has
-        // to be checked for backwards
-        // compatibility.
-        * Race                         // "N7:U7"
-        * Ethnicity                    // "V7"
-        // Why the `option` type? See TODO 2023-12-11_1617
-        // in `ExcelReports/LynxData.fs`.
-        * DegreeOfVisualImpairment     // "W7:Z7"
-        * MajorCauseOfVisualImpairment // "AA7:AF7"
-        // * AgeRelatedImpairmentSubrow   // "AG7:AL7"
-        * HearingImpairment // "AG7"
-        * MobilityImpairment // "AH7"
-        * CommunicationImpairment // "AI7"
-        * CognitiveImpairment // "AJ7"
-        * MentalHealthImpairment // "AK7"
-        * OtherImpairment // "AL7"
-        * TypeOfResidence              // "AM7:AR7"
-        * SourceOfReferral             // "AS7:BE7"
-        * County                       // "BF7"
-        )
+// type DemographicsRow =
+//     // PONDER 2023-12-17_2233
+//     // Should these be `DemoGraphicsColumn`? Or
+//     // would that just be an exercise in pedantry?
+//     // After all, the whole point of a tuple is that
+//     // it can contain different types. Also, if
+//     // `DemographicsColumn` is used, then it will be
+//     // repeated 12 times ( e.g., `DemographicsColumn
+//     // of DemographicsColumn * ...`), losing most of
+//     // its meaning.
+//     DemographicsRow of
+//         ( ClientName                   // "A7"
+//         * IndividualsServed            // "B7:D7"
+//         * AgeAtApplication             // "E7:I7"
+//         * Gender                       // "J7:M7"
+//         // TODO 2023-12-10_1726
+//         // Well, more like a note really, for when a
+//         // LYNX query (see `lynxQuery`) "row" needs
+//         // to be converted to a `DemographicsRow`.
+//         // LYNX has the `lynx_intake` columns
+//         // `ethnicity` and `other_ethnicity` that
+//         // correspond to `Race` and `Ethnicity`
+//         // respectively.
+//         //
+//         // The catch: `ethnicity` used to have all
+//         // race options from the OIB report PLUS the
+//         // ethnicity column (i.e., "Hispanic or
+//         // Latino"), and `other_ethnicity` is mostly
+//         // empty. So when `ethnicity` is "Hispanic
+//         // or Latino", it means that `Race` will
+//         // have to be set `TwoOrMoreRaces`... This
+//         // has just been fixed in LYNX, but this has
+//         // to be checked for backwards
+//         // compatibility.
+//         * Race                         // "N7:U7"
+//         * Ethnicity                    // "V7"
+//         // Why the `option` type? See TODO 2023-12-11_1617
+//         // in `ExcelReports/LynxData.fs`.
+//         * DegreeOfVisualImpairment     // "W7:Z7"
+//         * MajorCauseOfVisualImpairment // "AA7:AF7"
+//         // * AgeRelatedImpairmentSubrow   // "AG7:AL7"
+//         * HearingImpairment // "AG7"
+//         * MobilityImpairment // "AH7"
+//         * CommunicationImpairment // "AI7"
+//         * CognitiveImpairment // "AJ7"
+//         * MentalHealthImpairment // "AK7"
+//         * OtherImpairment // "AL7"
+//         * TypeOfResidence              // "AM7:AR7"
+//         * SourceOfReferral             // "AS7:BE7"
+//         * County                       // "BF7"
+//         )
 
 // A. Clinical/functional Vision Assessments and Services
 // Vision  Assessment (Screening/ Exam/evaluation	Surgical or Therapeutic Treatment

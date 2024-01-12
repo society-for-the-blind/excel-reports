@@ -501,8 +501,17 @@ let fillDemographicsRow (dRow: DemographicsRow) (rowNumber: string) (xlsx: XSSFW
             updateCell cell cellString
     )
 
+let extractClientName (dRow: DemographicsRow) =
+    match dRow with
+    | (head :: _) ->
+        match (snd head) with
+        | Ok name -> toOIBString name
+        | Error str -> str
+    | _ -> failwith "Malformed demographics row."
+
 let populateDemographicsTab (dRows: DemographicsRow seq) (xlsx: XSSFWorkbook) =
     dRows
+    |> Seq.sortBy extractClientName
     |> Seq.iteri (
         fun i row ->
          fillDemographicsRow row (string(i + 7)) xlsx
