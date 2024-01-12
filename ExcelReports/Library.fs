@@ -96,18 +96,42 @@ let getAgeAtApplication
         | _ when age < 85 -> Ok AgeBracket75To84
         |              _  -> Ok AgeBracket85AndOlder
 
-// TODO Delete if not used anywhere
-let (|OIBString|_|) (v: IOIBString) (field: Option<'a>) =
-    match field with
-    | Some f ->
-        f.ToString() = (toOIBString v)
-        |> Some
-    | None   -> None
+// Takes type representation (i.e., `System.Type`) of a discriminated union with only case names, and tries to match it with a string supplied in the `match` clause.
 
-// TODO document `OIBValue` and `OIBCase` because
-//      only after 2 weeks of not looking at their
-//      implementation I barely understand what they do.
-let (|OIBValue|_|) (iOIBStringType: System.Type) (field: string) =
+(*
+    Partial  active  pattern  for  converting  a  string
+    from  a LYNX  database column  to a  case of  an OIB
+    discriminated union type  in `OIBTypes.fs` (the type
+    argument  also  has  to implement  the  `IOIBString`
+    interface). For example:
+
+        open OIBTypes
+        let genderType = typeof<Gender>
+
+        match "Female" with
+        | OIBValue genderType matchedCaseIfAny -> matchedCaseIfAny
+        | other ->
+            failwith $"Value '{other}' in Lynx is not a valid OIB Gender option."
+
+    > Why **partial** active pattern?
+    > -------------------------------
+    > Because
+    >
+    > 1. it needs to accept an OIB type argument
+         to  be able  to  convert the  string to
+         a specific union case, and
+    >
+    > 2. the  only  other  active pattern type that
+         accepts  arguments  is  the  "one  choice"
+         active pattern,  but that has to  return a
+         concrete value; in the case of `OIBValue`,
+         there is  a possibility  that there  is no
+         match, so the  `option` type is necessary.
+         (Could have just  thrown an exception, but
+         we in  fact need to whether  it matches or
+         not.)
+*)
+let (|OIBValue|_|) (iOIBStringType: System.Type) (valueToMatch: string) =
 
     if (not <| typeof<IOIBString>.IsAssignableFrom(iOIBStringType))
     then failwith $"Type {iOIBStringType.FullName} does not implement the `IOIBString` interface."
@@ -125,16 +149,16 @@ let (|OIBValue|_|) (iOIBStringType: System.Type) (field: string) =
         |> Array.map caseToTuples
         |> Map.ofArray
 
-    match (Map.tryFind field valueMap) with
+    match (Map.tryFind valueToMatch valueMap) with
     | None   -> None
     | some -> some
 
 let (|OIBCase|_|)
     (iOIBStringType: System.Type)
     (nonOIB: Result<IOIBString, string> option)
-    (field: string option) =
+    (valueToMatch: string option) =
 
-    match field with
+    match valueToMatch with
     | Some v ->
         match v with
         | OIBValue iOIBStringType case -> Some (Ok case)
@@ -200,7 +224,8 @@ let getDegreeOfVisualImpairment (lynxRow: LynxRow) : Result<IOIBString, string> 
 let getColumn
     (columnType: System.Type)
     (nonOIBDefault: Result<IOIBString, string> option)
-    (lynxColumn: string option) : Result<IOIBString, string> =
+    (lynxColumn: string option)
+    : Result<IOIBString, string> =
 
     // See NOTE "FS0025: Incomplete pattern match" warning above
     match lynxColumn with
@@ -220,12 +245,16 @@ let cache =
         )
     , Result<IOIBString,string>>()
 
-let getColumnCached typeOpt field row =
-    let key = (typeOpt, field, row)
+let getColumnCached
+    (columnType: System.Type)
+    (nonOIBDefault: Result<IOIBString, string> option)
+    (lynxColumn: string option)
+    : Result<IOIBString, string> =
+    let key = (columnType, nonOIBDefault, lynxColumn)
     match cache.TryGetValue(key) with
     | true, value -> value
     | _ ->
-        let value = getColumn typeOpt field row
+        let value = getColumn columnType nonOIBDefault lynxColumn
         cache.[key] <- value
         value
 
@@ -425,7 +454,7 @@ let enterDemographicsRow (dRow: DemographicsRow) (rowNumber: string) (xlsx: XSSF
             updateCell cell cellString
     )
 
-// --------------------------------------------------------------------
+// ---SERVICES---------------------------------------------------------
 let mergeServiceRows rowA rowB =
     (rowA, rowB)
     ||> Seq.zip
