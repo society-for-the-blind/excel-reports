@@ -192,6 +192,7 @@ type LynxQuery = LynxRow list
 
 type LynxData = {
     grantYearStart : System.DateOnly;
+    grantYearEnd   : System.DateOnly;
     lynxQuery : LynxQuery;
 }
 
@@ -248,7 +249,7 @@ let lynxQuery (connectionString: string) (grantYear: int) : LynxData =
 
     let baseSelect = "SELECT " + queryColumns + " FROM " + joins
 
-    let whereClause = $"WHERE note.note_date >= '{string grantYear}-10-01'::date AND note.note_date < '{string (grantYear+1)}-10-01'::date"
+    let whereClause = $"WHERE note.note_date >= '{string grantYear}-10-01'::date AND note.note_date < '{string (grantYear+1)}-09-30'::date"
 
     // NOTE 2023-12-01_1347 Should be irrelevant.
     // let groupByClause = "GROUP BY " + queryColumns
@@ -297,8 +298,10 @@ let lynxQuery (connectionString: string) (grantYear: int) : LynxData =
     |> Sql.query query
     |> Sql.execute exeReader
     |> fun (q: LynxQuery) ->
-        { grantYearStart = System.DateOnly(grantYear, 10, 1);
-          lynxQuery = q
+        { grantYearStart = System.DateOnly(grantYear, 10, 1)
+        // See `getAgeAtApplication` in `Library.fs`
+        ; grantYearEnd = System.DateOnly((grantYear+1), 9, 30)
+        ; lynxQuery = q
         }
 
 // === SqlHydra EXPERIMENTS ===

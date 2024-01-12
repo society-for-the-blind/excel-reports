@@ -70,31 +70,37 @@ let getIndividualsServed
         | true  -> Ok PriorCase
         | false -> Ok NewCase
 
+// Why `grantYearEnd`?
+// Because a person may become 55 during the grant year.
 let getAgeAtApplication
     (lynxRow: LynxRow)
-    (grantYearStart: System.DateOnly)
+    (grantYearEnd: System.DateOnly)
     : Result<IOIBString, string> =
 
     match lynxRow.intake_birth_date with
     | None ->
         Error $"Birth date is missing in LYNX. (Contact ID: {lynxRow.contact_id})"
     | Some (birthDate: System.DateOnly) ->
-        let grantYearStartInDays = grantYearStart.DayNumber
-        let birthDateInDays = birthDate.DayNumber
-        // Sloppy accomodation for leap years
-        let age = (float (grantYearStartInDays - birthDateInDays)) / 365.25
+        match (birthDate > grantYearEnd) with
+        | true ->
+            Error $"Invalid date of birth: {birthDate}. (Contact ID: {lynxRow.contact_id})"
+        | false ->
+            let grantYearEndInDays = grantYearEnd.DayNumber
+            let birthDateInDays = birthDate.DayNumber
+            // Sloppy accomodation for leap years
+            let age = (float (grantYearEndInDays - birthDateInDays)) / 365.25
 
-        match age with
-        // NOTE 2023-12-10_2006
-        // There  are  (or will  be) age brackets  younger than
-        // 55, but that is probably a clerical error as the SIP
-        // program is only for individuals above 55.
-        | _ when age < 55 ->
-            Error $"Age below 55. (Contact ID: {lynxRow.contact_id})"
-        | _ when age < 65 -> Ok AgeBracket55To64
-        | _ when age < 75 -> Ok AgeBracket65To74
-        | _ when age < 85 -> Ok AgeBracket75To84
-        |              _  -> Ok AgeBracket85AndOlder
+            match age with
+            // NOTE 2023-12-10_2006
+            // There  are  (or will  be) age brackets  younger than
+            // 55, but that is probably a clerical error as the SIP
+            // program is only for individuals above 55.
+            | _ when age < 55 ->
+                Error $"Age below 55. (DOB: {birthDate}, Contact ID: {lynxRow.contact_id})"
+            | _ when age < 65 -> Ok AgeBracket55To64
+            | _ when age < 75 -> Ok AgeBracket65To74
+            | _ when age < 85 -> Ok AgeBracket75To84
+            |              _  -> Ok AgeBracket85AndOlder
 
 // Takes type representation (i.e., `System.Type`) of a discriminated union with only case names, and tries to match it with a string supplied in the `match` clause.
 
@@ -153,7 +159,10 @@ let (|OIBValue|_|) (iOIBStringType: System.Type) (valueToMatch: string) =
     | None   -> None
     | some -> some
 
-let (|OIBCase|_|)
+(*
+    `OIBCase` partial active pattern
+*)
+let (|OIBCase|)
     (iOIBStringType: System.Type)
     (nonOIB: Result<IOIBString, string> option)
     (valueToMatch: string option) =
@@ -161,14 +170,13 @@ let (|OIBCase|_|)
     match valueToMatch with
     | Some v ->
         match v with
-        | OIBValue iOIBStringType case -> Some (Ok case)
+        | OIBValue iOIBStringType case -> Ok case
         | other ->
             ( (Error $"Value '{other}' in Lynx is not a valid OIB option.")
             , nonOIB
             )
             ||> Option.defaultValue
-            |> Some
-    | None -> Some (Error "Value is missing in LYNX.")
+    | None -> Error "Value is missing in LYNX."
 
 // TODO Delete if not used anywhere
 let getUnionType (case: obj) =
@@ -393,11 +401,15 @@ let getTypeOfResidence (lynxRow: LynxRow) : Result<IOIBString, string> =
 
 type DemographicsRow = (string * Result<IOIBString, string>) list
 
-let createDemographicsRow (lynxRow: LynxRow) (grantYearStart: System.DateOnly) =
-    // let demoColumns = 
+let createDemographicsRow
+    (grantYearStart: System.DateOnly)
+    (grantYearEnd:   System.DateOnly)
+    (lynxRow: LynxRow)
+    : DemographicsRow =
+    // let demoColumns =
     [ ( "A", getClientName lynxRow )
     ; ( "B", getIndividualsServed lynxRow grantYearStart )
-    ; ( "E", getAgeAtApplication  lynxRow grantYearStart )
+    ; ( "E", getAgeAtApplication  lynxRow grantYearEnd )
     ; ( "J", getColumnCached typeof<Gender> None lynxRow.intake_gender )
     ; ( "N", getColumnCached typeof<Race> None lynxRow.intake_ethnicity )
     ; ( "V", getEthnicity lynxRow )
@@ -416,10 +428,10 @@ let createDemographicsRow (lynxRow: LynxRow) (grantYearStart: System.DateOnly) =
     // // For troubleshooting (to be able to compare the rows with the transformed ones).
     // (demoColumns, lynxRow)
 
-let getDemographics (lynxData: LynxData) =
+let getDemographics (lynxData: LynxData) : DemographicsRow seq =
     let rowsGroupedByClient =
         lynxData.lynxQuery
-        |> Seq.map (flip createDemographicsRow <| lynxData.grantYearStart)
+        |> Seq.map (createDemographicsRow lynxData.grantYearStart lynxData.grantYearEnd)
         |> Seq.groupBy (function
             | ((_, Ok client) :: _) -> toOIBString client
             | ((_, Error e)   :: _) -> failwith e
@@ -437,7 +449,7 @@ let getDemographics (lynxData: LynxData) =
         | _ -> failwith "A client has non-unique demographic rows."
     )
 
-let enterDemographicsRow (dRow: DemographicsRow) (rowNumber: string) (xlsx: XSSFWorkbook) =
+let fillDemographicsRow (dRow: DemographicsRow) (rowNumber: string) (xlsx: XSSFWorkbook) =
     let errorColor = hexStringToRGB "#ffc096"
     dRow
     |> Seq.iter (
@@ -453,6 +465,13 @@ let enterDemographicsRow (dRow: DemographicsRow) (rowNumber: string) (xlsx: XSSF
                     "Error: " + str
             updateCell cell cellString
     )
+
+let populateDemographicsTab (dRows: DemographicsRow seq) (xlsx: XSSFWorkbook) =
+    dRows
+    |> Seq.iteri (
+        fun i row ->
+         fillDemographicsRow row (string(i + 7)) xlsx
+       )
 
 // ---SERVICES---------------------------------------------------------
 let mergeServiceRows rowA rowB =
