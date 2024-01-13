@@ -168,6 +168,7 @@ type LynxRow = {
     // present, but being explicit feels better.
     note_id             : int; // aliased! see NOTE "add_SQL_aliases"
     note_at_devices     :            bool option;
+    note_at_services    :            bool option;
     note_orientation    :            bool option;
     note_dls            :            bool option;
     note_communications :            bool option;
@@ -175,6 +176,7 @@ type LynxRow = {
     note_counseling     :            bool option;
     note_information    :            bool option;
     note_support        :            bool option;
+    note_services       :            bool option;
     note_note_date      : System.DateOnly option;
 
     plan_plan_name               : string option;

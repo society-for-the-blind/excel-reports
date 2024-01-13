@@ -242,12 +242,6 @@ let getEthnicity (lynxRow: LynxRow) : Result<IOIBString, string> =
 
 let getDegreeOfVisualImpairment (lynxRow: LynxRow) : Result<IOIBString, string> =
     let degreeType = typeof<DegreeOfVisualImpairment>
-    // NOTE "FS0025: Incomplete pattern match" warning
-    //      The pattern  matches in  `OIBCase` active
-    //      pattern are  exhaustive, but  the compiler
-    //      has trouble figuring this out (plus, it is
-    //      a nested active pattern, but `OIBValue` is
-    //      also exhaustive).
     match lynxRow.intake_degree with
     // Historical LYNX options
     | Some "Light Perception Only" -> Ok LegallyBlind
@@ -438,13 +432,13 @@ let getTypeOfResidence (lynxRow: LynxRow) : Result<IOIBString, string> =
 //     | None ->
 //         Error "Value is missing in LYNX."
 
-type DemographicsRow = (string * Result<IOIBString, string>) list
+type OIBRow = (string * Result<IOIBString, string>) list
 
 let createDemographicsRow
     (grantYearStart: System.DateOnly)
     (grantYearEnd:   System.DateOnly)
     (lynxRow: LynxRow)
-    : DemographicsRow =
+    : OIBRow =
     // let demoColumns =
     [ ( "A", getClientName lynxRow )
     ; ( "B", getIndividualsServed lynxRow grantYearStart )
@@ -476,14 +470,26 @@ let groupLynxRowsByClientName (rows: LynxQuery) =
             | Error str -> str
         )
 
-let getDemographics (lynxData: LynxData) : DemographicsRow seq =
+let getTabData
+    (lynxRowMapper: LynxRow -> OIBRow )
+    (lynxData: LynxData)
+    : (string * OIBRow seq) seq =
+
     lynxData.lynxQuery
     |> groupLynxRowsByClientName
-    |> Seq.map (fun (_clientName, lynxRows) ->
+    |> Seq.map (fun (clientName, lynxRows) ->
         lynxRows
-        |> Seq.map (createDemographicsRow lynxData.grantYearStart lynxData.grantYearEnd)
+        |> Seq.map lynxRowMapper
+        |> fun oibRows -> (clientName, oibRows)
+       )
+
+let getDemographics (lynxData: LynxData) : OIBRow seq =
+    lynxData
+    |> getTabData (createDemographicsRow lynxData.grantYearStart lynxData.grantYearEnd)
+    |> Seq.map (fun (_clientName, oibRows) ->
+        oibRows
         |> Seq.distinct
-        // All  `DemographicsRow`s   should  be the same  for a
+        // All  `OIBRow`s   should  be the same  for a
         // given  client, so  if  this crashes,  it means  that
         // there is an issue with the LYNX data.
         //
@@ -494,7 +500,7 @@ let getDemographics (lynxData: LynxData) : DemographicsRow seq =
         |> Seq.exactlyOne
     )
 
-let fillDemographicsRow (dRow: DemographicsRow) (rowNumber: string) (xlsx: XSSFWorkbook) =
+let fillDemographicsRow (dRow: OIBRow) (rowNumber: string) (xlsx: XSSFWorkbook) =
     let errorColor = hexStringToRGB "#ffc096"
     dRow
     |> Seq.iter (
@@ -511,7 +517,7 @@ let fillDemographicsRow (dRow: DemographicsRow) (rowNumber: string) (xlsx: XSSFW
             updateCell cell cellString
     )
 
-let extractClientName (dRow: DemographicsRow) =
+let extractClientName (dRow: OIBRow) =
     match dRow with
     | (head :: _) ->
         match (snd head) with
@@ -519,7 +525,7 @@ let extractClientName (dRow: DemographicsRow) =
         | Error str -> str
     | _ -> failwith "Malformed demographics row."
 
-let populateDemographicsTab (dRows: DemographicsRow seq) (xlsx: XSSFWorkbook) =
+let populateDemographicsTab (dRows: OIBRow seq) (xlsx: XSSFWorkbook) =
     dRows
     |> Seq.sortBy extractClientName
     |> Seq.iteri (
@@ -528,6 +534,48 @@ let populateDemographicsTab (dRows: DemographicsRow seq) (xlsx: XSSFWorkbook) =
        )
 
 // ---SERVICES---------------------------------------------------------
+
+// type OIBRow = (string * Result<IOIBString, string>) list
+
+let getOutcomes (lynxRow: LynxRow) : Result<IOIBString, string> =
+    let degreeType = typeof<DegreeOfVisualImpairment>
+    match lynxRow.plan_living_plan_progress with
+    | Some "Plan complete, no difference in ability to maintain living situation" -> Ok Maintained
+    | Some "Plan complete, feeling more confident in ability to maintain living situation" -> Ok Increased
+    | Some "Plan complete, feeling less confident in ability to maintain living situation" -> Ok Decreased
+    | other -> Error $"Error: LYNX value: '{other}'."
+    // Why no `NotAssessed`? See `case_status_conundrum` TODO below.
+
+let createServicesRow (lynxRow: LynxRow) : OIBRow =
+      // TODO Ask what is with these rows
+    [ ( "B",  (Ok No)) // VisionAssessment
+    ; ( "C",  (Ok No)) // SurgicalOrTherapeuticTreatment
+      // --------------------------------
+    ; ( "D", boolOptsToResultYesNo [ lynxRow.note_at_devices; lynxRow.note_at_services ] )
+    ; ( "E", getColumnCached typeof<AssistiveTechnologyGoalOutcomes> None lynxRow.plan_at_outcomes )
+    ; ( "J", boolOptsToResultYesNo [ lynxRow.note_orientation ] )
+    ; ( "K", boolOptsToResultYesNo [ lynxRow.note_communications] )
+    ; ( "L", boolOptsToResultYesNo [ lynxRow.note_dls] )
+    ; ( "M", boolOptsToResultYesNo [ lynxRow.note_advocacy] )
+    ; ( "N", boolOptsToResultYesNo [ lynxRow.note_counseling ] )
+    ; ( "O", boolOptsToResultYesNo [ lynxRow.note_information ] )
+    ; ( "P", boolOptsToResultYesNo [ lynxRow.note_services ] )
+    ; ( "Q", getColumnCached typeof<IndependentLivingAndAdjustmentOutcomes> None lynxRow.plan_ila_outcomes )
+    ; ( "U", boolOptsToResultYesNo [ lynxRow.note_support ] )
+      // TODO "case_status_conundrum"
+      //      `CaseStatus` affects `LivingSituationOutcomes` (column W) and `HomeAndCommunityInvolvementOutcomes` (column AA), so if it is always assumed to be `Assessed`, then there is no point in every mapping to `NotAssessed`.
+    ; ( "V",  (Ok Assessed) ) // CaseStatus
+    ; ( "W",  getOutcomes lynxRow )
+    ; ( "AA", getOutcomes lynxRow )
+      // TODO Add to LYNX first then here
+    // ; ( "AE", getColumnCached typeof<EmploymentOutcomes> None lynxRow.plan_employment_outcomes )
+    ]
+
+let getServices (lynxData: LynxData) = //: OIBRow seq =
+    lynxData
+    |> getTabData createServicesRow
+    // TODO how to consolidate...
+
 let mergeServiceRows rowA rowB =
     (rowA, rowB)
     ||> Seq.zip
