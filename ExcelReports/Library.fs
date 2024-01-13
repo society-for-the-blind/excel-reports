@@ -463,25 +463,31 @@ let createDemographicsRow
     // // For troubleshooting (to be able to compare the rows with the transformed ones).
     // (demoColumns, lynxRow)
 
-let getDemographics (lynxData: LynxData) : DemographicsRow seq =
-    let rowsGroupedByClient =
-        lynxData.lynxQuery
-        |> Seq.map (createDemographicsRow lynxData.grantYearStart lynxData.grantYearEnd)
-        |> Seq.groupBy (function
-            | ((_, Ok client) :: _) -> toOIBString client
-            | ((_, Error e)   :: _) -> failwith e
-            | ([]) -> failwith "empty row"
+let groupLynxRowsByClientName (rows: LynxQuery) =
+    rows
+    |> Seq.groupBy (
+        fun lynxRow ->
+            match (getClientName lynxRow) with
+            | Ok clientName -> toOIBString clientName
+            | Error str -> str
         )
 
-    rowsGroupedByClient
-    |> Seq.map (fun (_client, demoRows) ->
-        let consolidatedRows =
-            demoRows
-            |> Seq.distinct
-            |> Seq.toList
-        match consolidatedRows with
-        | [row] -> row
-        | _ -> failwith "A client has non-unique demographic rows."
+let getDemographics (lynxData: LynxData) : DemographicsRow seq =
+    lynxData.lynxQuery
+    |> groupLynxRowsByClientName
+    |> Seq.map (fun (_clientName, lynxRows) ->
+        lynxRows
+        |> Seq.map (createDemographicsRow lynxData.grantYearStart lynxData.grantYearEnd)
+        |> Seq.distinct
+        // All  `DemographicsRow`s   should  be the same  for a
+        // given  client, so  if  this crashes,  it means  that
+        // there is an issue with the LYNX data.
+        //
+        // TODO Wrap  it  in  `try..catch`  and  return  a
+        //      more meaningful error  conveying the above
+        //      message. Or just replace it with a `match`
+        //      for a one element list.
+        |> Seq.exactlyOne
     )
 
 let fillDemographicsRow (dRow: DemographicsRow) (rowNumber: string) (xlsx: XSSFWorkbook) =

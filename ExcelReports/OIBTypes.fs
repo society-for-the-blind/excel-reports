@@ -351,17 +351,10 @@ type County =
 //         )
 
 // A. Clinical/functional Vision Assessments and Services
-// Vision  Assessment (Screening/ Exam/evaluation	Surgical or Therapeutic Treatment
 type               VisionAssessment = YesOrNo // "B7"
 type SurgicalOrTherapeuticTreatment = YesOrNo // "C7"
 
-type ClinicalFunctionalVisionAssessmentsAndServices =
-    ( VisionAssessment
-    * SurgicalOrTherapeuticTreatment
-    )
-
 // B. Assistive Technology Devices and Services
-// AT Goal Outcomes
 type ReceivedAssistiveTechnologyServicesOrDevices = YesOrNo // "D7"
 
 type AssistiveTechnologyGoalOutcomes = //   ("E7:H7",
@@ -382,99 +375,109 @@ type AssistiveTechnologyGoalOutcomes = //   ("E7:H7",
 //     ("G2", "Assessed and maintained independence");
 //     ("H2", "Assessed with decreased independence")])
 
-type AssistiveTechnologyColumns =
-    // TODO 2023-12-07_1021
-    // If `ReceivedAssistiveTechnologyServicesOrDevices` is `No` then `AssistiveTechnologyGoalOutcomes` should be `NotAssessed`.
-    // !!!
-    // !!! Make it a generic constraint because this will be a theme in later columns.
-    // !!!
-    // PONDER Unlike 2023-12-04_2337 constraint,
-    // this one IS imposed by the OIB report. How
-    // to highlight this fact? (This is a value
-    // level constraint, so, as far as I know, it
-    // cannot be represented in the type system
-    // without dependent types.)
-    // PONDER ADDENDUM
-    // Tried to implement this constraint in the
-    // type system (see below) but then another
-    // "translation" type / function will be
-    // needed to match the report's layout.
-    //
-    //     // This illustrates the point above, but
-    //     // it's still bad: I would associate
-    //     // `ServicesDelivered` with a list of
-    //     // services and not with outcomes.
-    //     type WereAssistiveTechnologyServicesOrDevicesDelivered = // "D7"
-    //     | NoServicesOrDevicesDelivered
-    //     | ServicesDelivered of AssistiveTechnologyGoalOutcomes
-    //
-    // Suffice to say, the goal is to get the job done,
-    // and using `...Row` types is easier/quicker for now.
-    AssistiveTechnologyColumns of
-        ( ReceivedAssistiveTechnologyServicesOrDevices // "D7"
-        * AssistiveTechnologyGoalOutcomes              // "E7:H7"
-        )
+// type AssistiveTechnologyColumns =
+//     // TODO 2023-12-07_1021
+//     // If `ReceivedAssistiveTechnologyServicesOrDevices` is `No` then `AssistiveTechnologyGoalOutcomes` should be `NotAssessed`.
+//     // !!!
+//     // !!! Make it a generic constraint because this will be a theme in later columns.
+//     // !!!
+//     // PONDER Unlike 2023-12-04_2337 constraint,
+//     // this one IS imposed by the OIB report. How
+//     // to highlight this fact? (This is a value
+//     // level constraint, so, as far as I know, it
+//     // cannot be represented in the type system
+//     // without dependent types.)
+//     // PONDER ADDENDUM
+//     // Tried to implement this constraint in the
+//     // type system (see below) but then another
+//     // "translation" type / function will be
+//     // needed to match the report's layout.
+//     //
+//     //     // This illustrates the point above, but
+//     //     // it's still bad: I would associate
+//     //     // `ServicesDelivered` with a list of
+//     //     // services and not with outcomes.
+//     //     type WereAssistiveTechnologyServicesOrDevicesDelivered = // "D7"
+//     //     | NoServicesOrDevicesDelivered
+//     //     | ServicesDelivered of AssistiveTechnologyGoalOutcomes
+//     //
+//     // Suffice to say, the goal is to get the job done,
+//     // and using `...Row` types is easier/quicker for now.
+//     AssistiveTechnologyColumns of
+//         ( ReceivedAssistiveTechnologyServicesOrDevices // "D7"
+//         * AssistiveTechnologyGoalOutcomes              // "E7:H7"
+//         )
 
 // C. Independent Living and Adjustment Services
+//
+//    "Received IL/A Services" column is a formula computing its value from the following columns:
 type ReceivedOrientationAndMobilityTraining = YesOrNo // "J7"
-type ReceivedCommunicationSkills = YesOrNo // "K7"
-type ReceivedDailyLivingSkills = YesOrNo // "L7"
-type ReceivedAdvocacyTraining = YesOrNo // "M7"
-type ReceivedAdjustmentCounseling = YesOrNo // "N7"
-type ReceivedInformationAndReferral = YesOrNo // "O7"
-type ReceivedOtherServices = YesOrNo // "P7"
+type ReceivedCommunicationSkills            = YesOrNo // "K7"
+type ReceivedDailyLivingSkills              = YesOrNo // "L7"
+type ReceivedAdvocacyTraining               = YesOrNo // "M7"
+type ReceivedAdjustmentCounseling           = YesOrNo // "N7"
+type ReceivedInformationAndReferral         = YesOrNo // "O7"
+type ReceivedOtherServices                  = YesOrNo // "P7"
+
 type IndependentLivingAndAdjustmentOutcomes = // "Q7:T7"
-    | NotAssessed
-    | AssessedWithImprovedIndependence
-    | AssessedAndMaintainedIndependence
-    | AssessedWithDecreasedIndependence
-//   ("Q7:T7",
-//    [("Q2", "Not assessed"); ("R2", "Assessed with improved independence");
-//     ("S2", "Assessed and maintained independence");
-//     ("T2", "Assessed with decreased independence")])
-
-
-// Received O&M
-// Received Communication Skills
-// Received Daily Living Skills
-// Received Advocacy training
-// Received Adjustment Counseling
-// Received I&R
-// Received Other Services
-// IL/A Service Goal Outcomes
-
-type IndependentLivingAndAdjustmentColumns =
-    IndependentLivingAndAdjustmentColumns of
-        ( ReceivedOrientationAndMobilityTraining
-        * ReceivedCommunicationSkills
-        * ReceivedDailyLivingSkills
-        * ReceivedAdvocacyTraining
-        * ReceivedAdjustmentCounseling
-        * ReceivedInformationAndReferral
-        * ReceivedOtherServices
-        * IndependentLivingAndAdjustmentOutcomes
-        )
+    AssistiveTechnologyGoalOutcomes
 
 // D. Supportive Services
-// Case Status
-// Living Situation Outcomes
-// Home and Community involvement Outcomes
-// Employment Outcome
-// Number of Services
-// County
+type ReceivedSupportiveService = YesOrNo // "U7"
+
+type CaseStatus = // "V7"
+    | Assessed
+    | Pending
+
+    interface IOIBString with
+        member this.ToOIBString() =
+            match this with
+            | Assessed   -> "Assessed"
+            | Pending -> "Pending"
+
+type LivingSituationOutcomes = // "W7:Z7"
+    | Increased
+    | Maintained
+    | Decreased
+    | NotAssessed
+
+    interface IOIBString with
+        member this.ToOIBString() =
+            match this with
+            | Increased -> "Increased"
+            | Maintained -> "Maintained"
+            | Decreased -> "Decreased"
+            | NotAssessed -> "Not Assessed"
+
+type HomeAndCommunityInvolvementOutcomes = // "AA7:AD7"
+    LivingSituationOutcomes
+
+type EmploymentOutcomes = // "AE7:AH7"
+    | NotInterested
+    | LessLikely
+    | Unsure
+    | MoreLikely
+
+    interface IOIBString with
+        member this.ToOIBString() =
+            match this with
+            | NotInterested -> "Not Interested"
+            | LessLikely -> "Less Likely"
+            | Unsure -> "Unsure"
+            | MoreLikely -> "More Likely"
 
 // A row in the "PART IV-V-SERVICES AND OUTCOMES" sheet
-type ServicesRow =
-    ServicesRow of
-        ( // "A7"  is  a formula  pulling  `ClientName`
-          // from  the Demographics  sheet's "A7"  cell
-          // (see `DemographicsRow`)
-          ClinicalFunctionalVisionAssessmentsAndServices // "B7:C7"
-          // TODO see 2023-12-07_1021 constraint
-        * AssistiveTechnologyColumns                // "D7:H7"
-        // "I7" is a formula calculating from "J7:P7" whether
-        // client received any IL/A services
-        )
+// type ServicesRow =
+//     ServicesRow of
+//         ( // "A7"  is  a formula  pulling  `ClientName`
+//           // from  the Demographics  sheet's "A7"  cell
+//           // (see `DemographicsRow`)
+//           ClinicalFunctionalVisionAssessmentsAndServices // "B7:C7"
+//           // TODO see 2023-12-07_1021 constraint
+//         * AssistiveTechnologyColumns                // "D7:H7"
+//         // "I7" is a formula calculating from "J7:P7" whether
+//         // client received any IL/A services
+//         )
 
 // NOTE 2023-12-04_2257
 // Not sure if a type unifying row types will be
