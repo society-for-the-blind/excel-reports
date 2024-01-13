@@ -301,68 +301,72 @@ let getColumnCached
         cache.[key] <- value
         value
 
-let hasImpairment (lynxColumns: bool option list) : Result<IOIBString, string> =
+let boolOptsToResultYesNo (lynxColumns: bool option list) : Result<IOIBString, string> =
 
     let optTrueOrNone = function
         | Some b -> b
         | None -> false
 
-    match lynxColumns with
-    // Association of LYNX fields and "ager-related
-    // impairment" OIB columns:
-    //
-    //   `intake_hearing_loss`  <-> HearingImpairment
-    //   `intake_mobility`      <-> MobilityImpairment
-    //   `intake_communication` <-> CommunicationImpairment
-    //
-    //   `intake_alzheimers`          <->
-    //   `intake_learning_disability` <-> CognitiveImpairment
-    //   `intake_memory_loss`         <->
-    //   `intake_mental_health`   <->
-    //   `intake_substance_abuse` <-> MentalHealthImpairment
-    //   `lynxRow.intake_geriatric`       <->
-    //   `lynxRow.intake_stroke`          <->
-    //   `lynxRow.intake_seizure`         <->
-    //   `lynxRow.intake_migraine`        <->
-    //   `lynxRow.intake_heart`           <->
-    //   `lynxRow.intake_diabetes`        <->
-    //   `lynxRow.intake_dialysis`        <->
-    //   `lynxRow.intake_cancer`          <-> OtherImpairment
-    //   `lynxRow.intake_arthritis`       <->
-    //   `lynxRow.intake_high_bp`         <->
-    //   `lynxRow.intake_neuropathy`      <->
-    //   `lynxRow.intake_pain`            <->
-    //   `lynxRow.intake_asthma`          <->
-    //   `lynxRow.intake_musculoskeletal` <->
-    //   `lynxRow.intake_allergies        <->
-    //   `lynxRow.intake_dexterity`       <->
-    //
-    // In the case of the first 3, the presence of a value is crucial. The rest of the OIB columns are computed from multiple LYNX fields, so they can get away with a few missing values, but if all are missing, then then a human has to look into what is happening.
-
-    | _ when List.forall ((=) None) lynxColumns ->
+    match (List.forall ((=) None) lynxColumns) with
+    | true ->
         Error "Value is missing in LYNX."
-    | _ ->
+    | false ->
         lynxColumns
         |> List.tryFind optTrueOrNone
         |> (function
             | Some (Some true) -> Ok Yes
             | None -> Ok No
-            // Yes, the  `match` is  not exhaustive  without these
-            // cases,  but  they  will  never be  needed  based  on
-            // `tryFind`'s output. (Or shouldn't be, for that matter;
-            // and if they are, then the this will crash right away,
-            // so that's good.)
-            //
+            (*
+                Yes, the  match is not exhaustive,  but the cases
+                at the bottom will never happen:
+
+                possible   |               |
+                 inputs    | optTrueOrNone | tryFind optTrueOrNone
+                -----------+---------------+----------------------
+                None       | false         | None
+                Some true  | true          | Some true
+                Some false | false         | None
+            *)
             // | Some (Some false) -> Ok No
             // | Some (None) -> Error "Value is missing in LYNX."
         )
 
+// Association of LYNX fields and "age-related
+// impairment" OIB columns:
+//
+//   `intake_hearing_loss`  <-> HearingImpairment
+//   `intake_mobility`      <-> MobilityImpairment
+//   `intake_communication` <-> CommunicationImpairment
+//
+//   `intake_alzheimers`          <->
+//   `intake_learning_disability` <-> CognitiveImpairment
+//   `intake_memory_loss`         <->
+//   `intake_mental_health`   <->
+//   `intake_substance_abuse` <-> MentalHealthImpairment
+//   `lynxRow.intake_geriatric`       <->
+//   `lynxRow.intake_stroke`          <->
+//   `lynxRow.intake_seizure`         <->
+//   `lynxRow.intake_migraine`        <->
+//   `lynxRow.intake_heart`           <->
+//   `lynxRow.intake_diabetes`        <->
+//   `lynxRow.intake_dialysis`        <->
+//   `lynxRow.intake_cancer`          <-> OtherImpairment
+//   `lynxRow.intake_arthritis`       <->
+//   `lynxRow.intake_high_bp`         <->
+//   `lynxRow.intake_neuropathy`      <->
+//   `lynxRow.intake_pain`            <->
+//   `lynxRow.intake_asthma`          <->
+//   `lynxRow.intake_musculoskeletal` <->
+//   `lynxRow.intake_allergies        <->
+//   `lynxRow.intake_dexterity`       <->
+//
+// In the case of the first 3, the presence of a value is crucial. The rest of the OIB columns are computed from multiple LYNX fields, so they can get away with a few missing values, but if all are missing, then then a human has to look into what is happening.
 let getCognitiveImpairment (lynxRow: LynxRow) : Result<IOIBString, string> =
     [ lynxRow.intake_alzheimers
     ; lynxRow.intake_learning_disability
     ; lynxRow.intake_memory_loss
     ]
-    |> hasImpairment
+    |> boolOptsToResultYesNo
 
 let getMentalHealthImpairment (lynxRow: LynxRow) : Result<IOIBString, string> =
     [ ( lynxRow.intake_mental_health
@@ -370,7 +374,7 @@ let getMentalHealthImpairment (lynxRow: LynxRow) : Result<IOIBString, string> =
       )
     ; lynxRow.intake_substance_abuse
     ]
-    |> hasImpairment
+    |> boolOptsToResultYesNo
 
 let getOtherImpairment (lynxRow: LynxRow) : Result<IOIBString, string> =
     [ lynxRow.intake_geriatric
@@ -392,7 +396,7 @@ let getOtherImpairment (lynxRow: LynxRow) : Result<IOIBString, string> =
       )
     ; lynxRow.intake_dexterity
     ]
-    |> hasImpairment
+    |> boolOptsToResultYesNo
 
 let getTypeOfResidence (lynxRow: LynxRow) : Result<IOIBString, string> =
     let residenceType = typeof<TypeOfResidence>
@@ -450,9 +454,9 @@ let createDemographicsRow
     ; ( "V", getEthnicity lynxRow )
     ; ( "W", getDegreeOfVisualImpairment lynxRow )
     ; ( "AA", getColumnCached typeof<MajorCauseOfVisualImpairment> (Some <| Ok OtherCausesOfVisualImpairment) lynxRow.intake_eye_condition )
-    ; ( "AG", hasImpairment [ lynxRow.intake_hearing_loss ] )
-    ; ( "AH", hasImpairment [ lynxRow.intake_mobility ] )
-    ; ( "AI", hasImpairment [ lynxRow.intake_communication ] )
+    ; ( "AG", boolOptsToResultYesNo [ lynxRow.intake_hearing_loss ] )
+    ; ( "AH", boolOptsToResultYesNo [ lynxRow.intake_mobility ] )
+    ; ( "AI", boolOptsToResultYesNo [ lynxRow.intake_communication ] )
     ; ( "AJ", getCognitiveImpairment lynxRow )
     ; ( "AK", getMentalHealthImpairment lynxRow )
     ; ( "AL", getOtherImpairment lynxRow )
