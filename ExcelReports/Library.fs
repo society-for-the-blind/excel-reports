@@ -1,7 +1,7 @@
 ﻿module ExcelReports.OIB
 
 (*
-#r "nuget: NPOI, 2.6.2"
+#r "nuget: NPOI, 2.6.2";;
 #load "ExcelReports/ExcelFunctions.fs";;
 open ExcelReports.ExcelFunctions;;
 
@@ -14,6 +14,9 @@ open ExcelReports.OIBTypes;;
 
 #load "ExcelReports/Library.fs";;
 open ExcelReports.OIB;;
+
+-- oneliner:
+#r "nuget: NPOI, 2.6.2";; #load "ExcelReports/ExcelFunctions.fs";; open ExcelReports.ExcelFunctions;; #r "nuget: Npgsql.FSharp, 5.7.0";; #load "ExcelReports/LynxData.fs";; open ExcelReports.LynxData;; #load "ExcelReports/OIBTypes.fs";; open ExcelReports.OIBTypes;; #load "ExcelReports/Library.fs";; open ExcelReports.OIB;;
 *)
 
 open ExcelFunctions
@@ -303,6 +306,8 @@ let boolOptsToResultYesNo (lynxColumns: bool option list) : Result<IOIBString, s
 
     match (List.forall ((=) None) lynxColumns) with
     | true ->
+        // There should probably be a descriptive
+        // error type instead of a string.
         Error "Value is missing in LYNX."
     | false ->
         lynxColumns
@@ -432,9 +437,10 @@ let getTypeOfResidence (lynxRow: LynxRow) : Result<IOIBString, string> =
 //     | None ->
 //         Error "Value is missing in LYNX."
 
-type OIBRow = (string * Result<IOIBString, string>) list
+type OIBColumn = string * Result<IOIBString, string>
+type OIBRow = OIBColumn list
 
-let createDemographicsRow
+let mapToDemographicsRow
     (grantYearStart: System.DateOnly)
     (grantYearEnd:   System.DateOnly)
     (lynxRow: LynxRow)
@@ -477,6 +483,7 @@ let getTabData
 
     lynxData.lynxQuery
     |> groupLynxRowsByClientName
+    |> Seq.sortBy fst
     |> Seq.map (fun (clientName, lynxRows) ->
         lynxRows
         |> Seq.map lynxRowMapper
@@ -485,7 +492,7 @@ let getTabData
 
 let getDemographics (lynxData: LynxData) : OIBRow seq =
     lynxData
-    |> getTabData (createDemographicsRow lynxData.grantYearStart lynxData.grantYearEnd)
+    |> getTabData (mapToDemographicsRow lynxData.grantYearStart lynxData.grantYearEnd)
     |> Seq.map (fun (_clientName, oibRows) ->
         oibRows
         |> Seq.distinct
@@ -500,13 +507,13 @@ let getDemographics (lynxData: LynxData) : OIBRow seq =
         |> Seq.exactlyOne
     )
 
-let fillDemographicsRow (dRow: OIBRow) (rowNumber: string) (xlsx: XSSFWorkbook) =
+let fillRow (dRow: OIBRow) (rowNumber: string) (sheetNumber: int) (xlsx: XSSFWorkbook) =
     let errorColor = hexStringToRGB "#ffc096"
     dRow
     |> Seq.iter (
-        fun (column, result) ->
+        fun ((column, result): OIBColumn) ->
             // let rowNum = string(i + 7)
-            let cell = getCell xlsx 3 (column + rowNumber)
+            let cell = getCell xlsx sheetNumber (column + rowNumber)
             let cellString =
                 match result with
                 | Ok oibValue ->
@@ -517,25 +524,26 @@ let fillDemographicsRow (dRow: OIBRow) (rowNumber: string) (xlsx: XSSFWorkbook) 
             updateCell cell cellString
     )
 
-let extractClientName (dRow: OIBRow) =
-    match dRow with
-    | (head :: _) ->
-        match (snd head) with
-        | Ok name -> toOIBString name
-        | Error str -> str
-    | _ -> failwith "Malformed demographics row."
+// let extractClientName (dRow: OIBRow) =
+//     match dRow with
+//     | (head :: _) ->
+//         match (snd head) with
+//         | Ok name -> toOIBString name
+//         | Error str -> str
+//     | _ -> failwith "Malformed demographics row."
 
-let populateDemographicsTab (dRows: OIBRow seq) (xlsx: XSSFWorkbook) =
+let populateSheet (dRows: OIBRow seq) (xlsx: XSSFWorkbook) (sheetNumber: int) =
     dRows
-    |> Seq.sortBy extractClientName
+    // |> Seq.sortBy extractClientName
     |> Seq.iteri (
         fun i row ->
-         fillDemographicsRow row (string(i + 7)) xlsx
+         fillRow row (string(i + 7)) sheetNumber xlsx
        )
 
 // ---SERVICES---------------------------------------------------------
 
-// type OIBRow = (string * Result<IOIBString, string>) list
+// type OIBColumn = string * Result<IOIBString, string>
+// type OIBRow = OIBColumn list
 
 let getOutcomes (lynxRow: LynxRow) : Result<IOIBString, string> =
     let degreeType = typeof<DegreeOfVisualImpairment>
@@ -546,10 +554,29 @@ let getOutcomes (lynxRow: LynxRow) : Result<IOIBString, string> =
     | other -> Error $"Error: LYNX value: '{other}'."
     // Why no `NotAssessed`? See `case_status_conundrum` TODO below.
 
-let createServicesRow (lynxRow: LynxRow) : OIBRow =
+// let getPlanDate (lynxRow: LynxRow) : Result<IOIBString, string> =
+//     match lynxRow.plan_plan_date with
+//     | Some date ->
+//         Ok (PlanDate date)
+//     | None ->
+//         Error "No plan date in LYNX."
+
+let getPlanModified (lynxRow: LynxRow) : Result<IOIBString, string> =
+    match lynxRow.plan_modified with
+    | Some date ->
+        Ok (PlanModified date)
+    | None ->
+        Error "LYNX: plan.modified is NULL."
+
+let mapToServicesRow (lynxRow: LynxRow) : OIBRow =
+    [
+      ( "_", getPlanModified lynxRow)
+    //   ( "_", getPlanDate lynxRow )
+    // ; ( "_", (Ok (PlanId lynxRow.plan_id)))
+        // ------------------------------
       // TODO Ask what is with these rows
-    [ ( "B",  (Ok No)) // VisionAssessment
-    ; ( "C",  (Ok No)) // SurgicalOrTherapeuticTreatment
+    ; ( "B", (Ok No)) // VisionAssessment
+    ; ( "C", (Ok No)) // SurgicalOrTherapeuticTreatment
       // --------------------------------
     ; ( "D", boolOptsToResultYesNo [ lynxRow.note_at_devices; lynxRow.note_at_services ] )
     ; ( "E", getColumnCached typeof<AssistiveTechnologyGoalOutcomes> None lynxRow.plan_at_outcomes )
@@ -571,18 +598,107 @@ let createServicesRow (lynxRow: LynxRow) : OIBRow =
     // ; ( "AE", getColumnCached typeof<EmploymentOutcomes> None lynxRow.plan_employment_outcomes )
     ]
 
-let getServices (lynxData: LynxData) = //: OIBRow seq =
-    lynxData
-    |> getTabData createServicesRow
-    // TODO how to consolidate...
+// To distinguish it from the `OIBRow` (= `OIBColumn list`) type.
+type TransposedOIBRow = OIBColumn seq
 
-let mergeServiceRows rowA rowB =
-    (rowA, rowB)
-    ||> Seq.zip
-    |> Seq.map (fun ((column, valueA), (_, valueB)) ->
-        let shouldBeOneButIsIt =
-            ["A"; "B"; "E"; "J"; "N"; "V"; "W"; "AA"; "AG"; "AH"; "AI"; "AJ"; "AK"; "AL"; "AM"; "AS"; "BF"]
-        match valueA with
-        | Ok _ -> (column, valueA)
-        | Error _ -> (column, valueB)
+// let getResult (t: TransposedOIBRow) : Result<IOIBString, string> =
+//     // Intentionally not  using  `Seq.tryFind`: if
+//     // there are only `Error`s, then  something is
+//     // very off and needs to be investigated.
+//     let firstOk =
+//         t
+//         |> Seq.find (fun (_columnLetter, result) -> result = Ok Yes)
+//     let (_columnLetter, result) = firstOk
+//     result
+
+// The current rule to consolidate `Result<YesOrNo, string>`s:
+// 1. If there is a `Ok Yes`, then that is the result.
+// 2. If  there is  an  `Error`,  return that  as the rest
+//    are  `Ok No`s,  so  it may  be  possible that  after
+//    fixing  the  error, the  result  will  be `Ok  Yes`.
+//    (See  `boolOptsToResultYesNo`  for what  errors  are
+//    possible.)
+// 3. All elements are `Ok No` at this point.
+//
+// > WHY RETURN A SINGLE ERROR IN SCENARIO 2 AND NOT MERGING ERRORS WITH NOTE IDS?
+// > -----------------------------------------------------------------------------
+// > It  seems  to  be  too  much  effort for  too little
+// > gain: LYNX columns that comprise the `YesOrNo` cells
+// > on the "Services"  tab are of `bool  option` type in
+// > `lynxQuery`  out  of  caution,  but so  far  I  have
+// > not  seen any  nulls  (at the  moment,  that is  the
+// > only  error  returned  by  `boolOptsToResultYesNo`).
+// > Therefore, if there is an error (i.e., null) then it
+// > can be  looked up  in the  clients records,  and the
+// > others should show up as well.
+let mergeServiceYesNoCells (t: TransposedOIBRow) : OIBColumn =
+        t
+        |> Seq.tryFind ( fun ((_colLetter, result): OIBColumn) -> result = Ok Yes )
+        |> function
+            | None ->
+                let anyError =
+                    t
+                    |> Seq.tryFind (
+                        function
+                        | (_, Error _) -> true
+                        | _ -> false)
+                match anyError with
+                | Some errorColumn -> errorColumn
+                | None -> t |> Seq.head
+            | Some okColumn  -> okColumn
+
+// let byPlanDate ((("_", planDateResult) :: _rest): OIBRow) =
+//     match planDateResult with
+//     | Ok (planDate: IOIBString) ->
+//         let (PlanDate dateOnly) = (planDate :?> PlanDate)
+//         dateOnly
+//     | Error _ ->
+//         System.DateOnly(1,1,1)
+
+let byPlanModified ((("_", planModifiedResult) :: _rest): OIBRow) =
+    match planModifiedResult with
+    | Ok (planModified: IOIBString) ->
+        let (PlanModified dateOnly) = (planModified :?> PlanModified)
+        dateOnly
+    | Error _ ->
+        System.DateTime(1,1,1)
+
+// By  the  time  this  function  is  called,
+// all transposed  `OIBRow`s will  be ordered
+// by `PlanModified`  date, so the  first one
+// is the most recent.
+let mergeOutcomes (t: TransposedOIBRow) : OIBColumn =
+    t
+    // |> Seq.distinct
+    |> Seq.head
+
+let getServices (lynxData: LynxData) : OIBRow seq =
+    lynxData
+    |> getTabData mapToServicesRow
+    |> Seq.map (fun (clientName, oibRows) ->
+        oibRows
+        |> Seq.sortBy byPlanModified
+        |> Seq.rev
+    //     |> fun x -> (clientName, x)
+    // )
+        |> Seq.transpose
+           // The  first  element of  the "Services"  `OIBRow`  is
+           // not a  real column;  it was only  needed to  get the
+           // outcome columns (`IOIBOutcome`) ordered.
+        |> fun t -> t |> Seq.tail
+        |> Seq.map (fun (t: TransposedOIBRow) ->
+            // let (Ok ioibString) = getResult t
+            match (t |> Seq.head |> snd) with
+            | Error str -> t |> Seq.head
+            | Ok ioibString ->
+                match (box ioibString) with
+                // Irrelevent which  type abbreviation
+                // it is; the rules are the same. (See
+                // `mergeServiceYesNoCells`.)
+                | :? YesOrNo -> mergeServiceYesNoCells t
+                | :? IOIBOutcome -> mergeOutcomes t
+                // It is fixed in `mapToServicesRow`.
+                | :? CaseStatus as cs -> t |> Seq.head
+           )
+        |> Seq.toList
     )

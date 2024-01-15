@@ -350,6 +350,32 @@ type County =
 //         * County                       // "BF7"
 //         )
 
+// ---SERVICES----------------------------------------------------------
+
+// type PlanDate =
+//     | PlanDate of System.DateOnly
+
+//     interface IOIBString with
+//         member this.ToOIBString() =
+//             match this with
+//             | PlanDate date -> date.ToString()
+
+// type PlanId =
+//     | PlanId of int
+
+//     interface IOIBString with
+//         member this.ToOIBString() =
+//             match this with
+//             | PlanId id -> string(id)
+
+type PlanModified =
+    | PlanModified of System.DateTime
+
+    interface IOIBString with
+        member this.ToOIBString() =
+            match this with
+            | PlanModified dt -> dt.ToString()
+
 // A. Clinical/functional Vision Assessments and Services
 type               VisionAssessment = YesOrNo // "B7"
 type SurgicalOrTherapeuticTreatment = YesOrNo // "C7"
@@ -357,7 +383,10 @@ type SurgicalOrTherapeuticTreatment = YesOrNo // "C7"
 // B. Assistive Technology Devices and Services
 type ReceivedAssistiveTechnologyServicesOrDevices = YesOrNo // "D7"
 
-type AssistiveTechnologyGoalOutcomes = //   ("E7:H7",
+type IOIBOutcome =
+    abstract member outcome : unit -> unit
+
+type OutcomeA =
     | NotAssessed
     | AssessedWithImprovedIndependence
     | AssessedAndMaintainedIndependence
@@ -370,6 +399,11 @@ type AssistiveTechnologyGoalOutcomes = //   ("E7:H7",
             | AssessedWithImprovedIndependence   -> "Assessed with improved independence"
             | AssessedAndMaintainedIndependence  -> "Assessed and maintained independence"
             | AssessedWithDecreasedIndependence  -> "Assessed with decreased independence"
+
+    interface IOIBOutcome with
+        member this.outcome () = ()
+
+type AssistiveTechnologyGoalOutcomes = OutcomeA //   ("E7:H7",
 //   ("E7:H7",
 //    [("E2", "Not assessed"); ("F2", "Assessed with improved independence");
 //     ("G2", "Assessed and maintained independence");
@@ -419,8 +453,7 @@ type ReceivedAdjustmentCounseling           = YesOrNo // "N7"
 type ReceivedInformationAndReferral         = YesOrNo // "O7"
 type ReceivedOtherServices                  = YesOrNo // "P7"
 
-type IndependentLivingAndAdjustmentOutcomes = // "Q7:T7"
-    AssistiveTechnologyGoalOutcomes
+type IndependentLivingAndAdjustmentOutcomes = OutcomeA // "Q7:T7"
 
 // D. Supportive Services
 type ReceivedSupportiveService = YesOrNo // "U7"
@@ -435,7 +468,7 @@ type CaseStatus = // "V7"
             | Assessed   -> "Assessed"
             | Pending -> "Pending"
 
-type LivingSituationOutcomes = // "W7:Z7"
+type OutcomeB =
     | Increased
     | Maintained
     | Decreased
@@ -449,8 +482,11 @@ type LivingSituationOutcomes = // "W7:Z7"
             | Decreased -> "Decreased"
             | NotAssessed -> "Not Assessed"
 
-type HomeAndCommunityInvolvementOutcomes = // "AA7:AD7"
-    LivingSituationOutcomes
+    interface IOIBOutcome with
+        member this.outcome () = ()
+
+type             LivingSituationOutcomes = OutcomeB // "W7:Z7"
+type HomeAndCommunityInvolvementOutcomes = OutcomeB // "AA7:AD7"
 
 type EmploymentOutcomes = // "AE7:AH7"
     | NotInterested

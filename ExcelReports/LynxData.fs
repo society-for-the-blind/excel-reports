@@ -179,11 +179,14 @@ type LynxRow = {
     note_services       :            bool option;
     note_note_date      : System.DateOnly option;
 
+    plan_id                      :    int; // aliased! see NOTE "add_SQL_aliases"
     plan_plan_name               : string option;
     plan_at_outcomes             : string option;
     plan_community_plan_progress : string option;
     plan_ila_outcomes            : string option;
     plan_living_plan_progress    : string option;
+    plan_plan_date               : System.DateOnly option;
+    plan_modified                : System.DateTime option;
 
     mostRecentAddress_id       :    int; // aliased! see NOTE "add_SQL_aliases"
     mostRecentAddress_modified : System.DateTime option;
@@ -229,6 +232,8 @@ let lynxQuery (connectionString: string) (grantYear: int) : LynxData =
              // | "address_id" as a -> a + " AS address_id"
                 | "intake_id"  as a -> a + " AS intake_id"
                 | "note_id"    as a -> a + " AS note_id"
+                | "plan_id"    as a -> a + " AS plan_id"
+                | "plan_modified" as a -> a + " AS plan_modified"
                 | rest -> rest
             replaceFirstOccurrence alias ('_', '.');)
         |> String.concat ", "
@@ -279,6 +284,8 @@ let lynxQuery (connectionString: string) (grantYear: int) : LynxData =
                  // | "address_id" as a -> a
                     | "intake_id"  as a -> a
                     | "note_id"    as a -> a
+                    | "plan_id"    as a -> a
+                    | "plan_modified"    as a -> a
                     | rest -> deleteUpToFirstUnderscore rest
                 |> fun columnName ->
                     // printfn $"COLUMN NAME: {columnName}"
