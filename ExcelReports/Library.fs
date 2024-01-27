@@ -452,7 +452,10 @@ let getReferrer (lynxRow: LynxRow) : Result<IOIBString, string> =
 //     | None ->
 //         Error "Value is missing in LYNX."
 
-type OIBColumn = string * Result<IOIBString, string>
+// TODO ok for now, but may need to be replaced with
+//      a more meaningful type
+type ColumnName = string
+type OIBColumn = ColumnName * Result<IOIBString, string>
 type OIBRow = OIBColumn list
 
 let mapToDemographicsRow
@@ -493,24 +496,30 @@ let groupLynxRowsByClientName (rows: LynxQuery) =
             | Error str -> str
         )
 
+// TODO ok for now, but may need to be replaced with
+//      a more meaningful type
+type ClientName = string
+type ClientOIBRows = (ClientName * OIBRow seq)
+type OIBRowsGroupedAndOrderedByClientName = ClientOIBRows seq
+
 let getTabData
-    (lynxRowMapper: LynxRow -> OIBRow )
+    (toOIBRows: LynxRow -> OIBRow )
     (lynxData: LynxData)
-    : (string * OIBRow seq) seq =
+    : OIBRowsGroupedAndOrderedByClientName =
 
     lynxData.lynxQuery
     |> groupLynxRowsByClientName
     |> Seq.sortBy fst
     |> Seq.map (fun (clientName, lynxRows) ->
         lynxRows
-        |> Seq.map lynxRowMapper
+        |> Seq.map toOIBRows
         |> fun oibRows -> (clientName, oibRows)
        )
 
 let getDemographics (lynxData: LynxData) : OIBRow seq =
     lynxData
     |> getTabData (mapToDemographicsRow lynxData.grantYearStart lynxData.grantYearEnd)
-    |> Seq.map (fun (_clientName, oibRows) ->
+    |> Seq.map (fun ((_clientName, oibRows): ClientOIBRows) ->
         oibRows
         |> Seq.distinct
         // All  `OIBRow`s   should  be the same  for a
@@ -563,7 +572,7 @@ let populateSheet (dRows: OIBRow seq) (xlsx: XSSFWorkbook) (sheetNumber: int) =
 // type OIBRow = OIBColumn list
 
 let getOutcomes (lynxRow: LynxRow) : Result<IOIBString, string> =
-    let degreeType = typeof<DegreeOfVisualImpairment>
+    // let degreeType = typeof<DegreeOfVisualImpairment>
     match lynxRow.plan_living_plan_progress with
     | Some "Plan complete, no difference in ability to maintain living situation" -> Ok Maintained
     | Some "Plan complete, feeling more confident in ability to maintain living situation" -> Ok Increased
@@ -692,19 +701,19 @@ let mergeOutcomes (t: TransposedOIBRow) : OIBColumn =
 let getServices (lynxData: LynxData) : OIBRow seq =
     lynxData
     |> getTabData mapToServicesRow
-    |> Seq.map (fun (clientName, oibRows) ->
+    |> Seq.map (fun ((clientName, oibRows): ClientOIBRows) ->
         oibRows
         |> Seq.sortBy byPlanModified
         |> Seq.rev
-    //     |> fun x -> (clientName, x)
-    // )
+           // A client's many "service rows"  be "mushed" into one
+           // row, this  way  each column can be specified a merge
+           // strategy.
         |> Seq.transpose
            // The  first  element of  the "Services"  `OIBRow`  is
            // not a  real column;  it was only  needed to  get the
            // outcome columns (`IOIBOutcome`) ordered.
-        |> fun t -> t |> Seq.tail
+        |> fun (t: TransposedOIBRow seq) -> t |> Seq.tail
         |> Seq.map (fun (t: TransposedOIBRow) ->
-            // let (Ok ioibString) = getResult t
             match (t |> Seq.head |> snd) with
             | Error str -> t |> Seq.head
             | Ok ioibString ->
