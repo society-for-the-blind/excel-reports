@@ -625,61 +625,7 @@ let mapToServicesRow (lynxRow: LynxRow) : OIBRow =
     ]
 
 // To distinguish it from the `OIBRow` (= `OIBColumn list`) type.
-type TransposedOIBRow = OIBColumn seq
-
-// let getResult (t: TransposedOIBRow) : Result<IOIBString, string> =
-//     // Intentionally not  using  `Seq.tryFind`: if
-//     // there are only `Error`s, then  something is
-//     // very off and needs to be investigated.
-//     let firstOk =
-//         t
-//         |> Seq.find (fun (_columnLetter, result) -> result = Ok Yes)
-//     let (_columnLetter, result) = firstOk
-//     result
-
-// The current rule to consolidate `Result<YesOrNo, string>`s:
-// 1. If there is a `Ok Yes`, then that is the result.
-// 2. If  there is  an  `Error`,  return that  as the rest
-//    are  `Ok No`s,  so  it may  be  possible that  after
-//    fixing  the  error, the  result  will  be `Ok  Yes`.
-//    (See  `boolOptsToResultYesNo`  for what  errors  are
-//    possible.)
-// 3. All elements are `Ok No` at this point.
-//
-// > WHY RETURN A SINGLE ERROR IN SCENARIO 2 AND NOT MERGING ERRORS WITH NOTE IDS?
-// > -----------------------------------------------------------------------------
-// > It  seems  to  be  too  much  effort for  too little
-// > gain: LYNX columns that comprise the `YesOrNo` cells
-// > on the "Services"  tab are of `bool  option` type in
-// > `lynxQuery`  out  of  caution,  but so  far  I  have
-// > not  seen any  nulls  (at the  moment,  that is  the
-// > only  error  returned  by  `boolOptsToResultYesNo`).
-// > Therefore, if there is an error (i.e., null) then it
-// > can be  looked up  in the  clients records,  and the
-// > others should show up as well.
-let mergeServiceYesNoCells (t: TransposedOIBRow) : OIBColumn =
-        t
-        |> Seq.tryFind ( fun ((_colLetter, result): OIBColumn) -> result = Ok Yes )
-        |> function
-            | None ->
-                let anyError =
-                    t
-                    |> Seq.tryFind (
-                        function
-                        | (_, Error _) -> true
-                        | _ -> false)
-                match anyError with
-                | Some errorColumn -> errorColumn
-                | None -> t |> Seq.head
-            | Some okColumn  -> okColumn
-
-// let byPlanDate ((("_", planDateResult) :: _rest): OIBRow) =
-//     match planDateResult with
-//     | Ok (planDate: IOIBString) ->
-//         let (PlanDate dateOnly) = (planDate :?> PlanDate)
-//         dateOnly
-//     | Error _ ->
-//         System.DateOnly(1,1,1)
+type SameOIBColumns = OIBColumn seq
 
 let byPlanModified ((("_", planModifiedResult) :: _rest): OIBRow) =
     match planModifiedResult with
@@ -689,19 +635,58 @@ let byPlanModified ((("_", planModifiedResult) :: _rest): OIBRow) =
     | Error _ ->
         System.DateTime(1,1,1)
 
-// By  the  time  this  function  is  called,
-// all transposed  `OIBRow`s will  be ordered
-// by `PlanModified`  date, so the  first one
-// is the most recent.
-let mergeOutcomes (t: TransposedOIBRow) : OIBColumn =
-    t
-    // |> Seq.distinct
-    |> Seq.head
+let mergeServiceYesNoCells (yesNoA: YesOrNo) (yesNoB: YesOrNo) : YesOrNo =
+    match (yesNoA, yesNoB) with
+    | (Yes, _)
+    | (_, Yes) -> Yes
+    | (No, No) -> No
+
+let mergeOIBColumns
+    ((colNameA, resultA): OIBColumn)
+    ((colNameB, resultB): OIBColumn)
+    : OIBColumn =
+
+    // This should never happen, but doesn't hurt to check.
+    if (colNameA <> colNameB) then failwith "Column names do not match."
+
+    match (resultA, resultB) with
+    | Error str, Ok _
+    | Ok _, Error str ->
+        (colNameA, Error str)
+    | Error strA, Error strB ->
+        if (strA = strB)
+        then (colNameA, Error strA)
+        else (colNameA, Error (strA + "; " + strB))
+    | Ok ioibStringA as okA, Ok iOIBStringB ->
+        // Both `IOIBString`s should be the same type,
+        // so doesn't matter which one.
+        match (box ioibStringA) with
+
+          // Irrelevent which  type abbreviation
+          // it is; the rules are the same. (See
+          // `mergeServiceYesNoCells`.)
+        | :? YesOrNo ->
+            ((ioibStringA :?> YesOrNo)
+            ,(iOIBStringB :?> YesOrNo)
+            )
+            ||> (mergeServiceYesNoCells) :> IOIBString
+            |> Ok
+            |> (fun x -> (colNameA, x))
+
+          // always the same; see TODO "case_status_conundrum"
+        | :? CaseStatus
+
+          // By  the  time  this  function  is  called,
+          // all transposed  `OIBRow`s will  be ordered
+          // by `PlanModified`  date, so the  first one
+          // is the most recent.
+        | :? IOIBOutcome ->
+            (colNameA, okA)
 
 let getServices (lynxData: LynxData) : OIBRow seq =
     lynxData
     |> getTabData mapToServicesRow
-    |> Seq.map (fun ((clientName, oibRows): ClientOIBRows) ->
+    |> Seq.map (fun ((_clientName, oibRows): ClientOIBRows) ->
         oibRows
         |> Seq.sortBy byPlanModified
         |> Seq.rev
@@ -712,19 +697,9 @@ let getServices (lynxData: LynxData) : OIBRow seq =
            // The  first  element of  the "Services"  `OIBRow`  is
            // not a  real column;  it was only  needed to  get the
            // outcome columns (`IOIBOutcome`) ordered.
-        |> fun (t: TransposedOIBRow seq) -> t |> Seq.tail
-        |> Seq.map (fun (t: TransposedOIBRow) ->
-            match (t |> Seq.head |> snd) with
-            | Error str -> t |> Seq.head
-            | Ok ioibString ->
-                match (box ioibString) with
-                // Irrelevent which  type abbreviation
-                // it is; the rules are the same. (See
-                // `mergeServiceYesNoCells`.)
-                | :? YesOrNo -> mergeServiceYesNoCells t
-                | :? IOIBOutcome -> mergeOutcomes t
-                // It is fixed in `mapToServicesRow`.
-                | :? CaseStatus as cs -> t |> Seq.head
+        |> fun (t: SameOIBColumns seq) -> t |> Seq.tail
+        |> Seq.map (fun (t: SameOIBColumns) ->
+               Seq.reduce mergeOIBColumns t
            )
         |> Seq.toList
     )
