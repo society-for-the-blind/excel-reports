@@ -67,7 +67,7 @@ let getIndividualsServed
 
     match lynxRow.intake_intake_date with
     | None ->
-        Error "Intake date is missing in LYNX."
+        Error "Intake date is not set in LYNX."
     | Some intakeDate ->
         match (intakeDate < grantYearStart) with
         | true  -> Ok PriorCase
@@ -82,7 +82,7 @@ let getAgeAtApplication
 
     match lynxRow.intake_birth_date with
     | None ->
-        Error $"Birth date is missing in LYNX. (Contact ID: {lynxRow.contact_id})"
+        Error $"Birth date is not set in LYNX. (Contact ID: {lynxRow.contact_id})"
     | Some (birthDate: System.DateOnly) ->
         match (birthDate > grantYearEnd) with
         | true ->
@@ -214,12 +214,18 @@ let (|OIBCase|)
             , returnIfMatchFails
             )
             ||> Option.defaultValue
-    | None -> Error "Value is missing in LYNX."
+    | None -> Error "Value is not set in LYNX."
 
 // TODO Delete if not used anywhere
 let getUnionType (case: obj) =
     let caseType = case.GetType()
     FSharpType.GetUnionCases(caseType).[0].DeclaringType
+
+let getRace (lynxRow: LynxRow) : Result<IOIBString, string> =
+    let raceType = typeof<Race>
+    match lynxRow.intake_ethnicity with
+    | Some "Two or More Races" -> Ok TwoOrMoreRaces
+    | OIBCase raceType None result -> result
 
 let getEthnicity (lynxRow: LynxRow) : Result<IOIBString, string> =
     // See HISTORICAL NOTEs 2023-12-10_2222 and
@@ -308,7 +314,7 @@ let boolOptsToResultYesNo (lynxColumns: bool option list) : Result<IOIBString, s
     | true ->
         // There should probably be a descriptive
         // error type instead of a string.
-        Error "Value is missing in LYNX."
+        Error "Value not set in LYNX."
     | false ->
         lynxColumns
         |> List.tryFind optTrueOrNone
@@ -410,6 +416,15 @@ let getTypeOfResidence (lynxRow: LynxRow) : Result<IOIBString, string> =
     | OIBCase residenceType None result ->
         result
 
+let getReferrer (lynxRow: LynxRow) : Result<IOIBString, string> =
+    let referrerType = typeof<SourceOfReferral>
+    match lynxRow.intake_referred_by with
+    // Historical LYNX options
+    | Some "DOR" -> Ok StateVRAgency
+    | OIBCase referrerType None result ->
+        result
+
+
 // ONLY DELETE AFTER THE HISTORICAL NOTE ARE MOVED TO THE DOCS!
 // let getRace (lynxRow: LynxRow) : Result<IOIBString, string> =
 //     let raceType = typeof<Race>
@@ -450,7 +465,8 @@ let mapToDemographicsRow
     ; ( "B", getIndividualsServed lynxRow grantYearStart )
     ; ( "E", getAgeAtApplication  lynxRow grantYearEnd )
     ; ( "J", getColumnCached typeof<Gender> None lynxRow.intake_gender )
-    ; ( "N", getColumnCached typeof<Race> None lynxRow.intake_ethnicity )
+    // ; ( "N", getColumnCached typeof<Race> None lynxRow.intake_ethnicity )
+    ; ( "N", getRace lynxRow )
     ; ( "V", getEthnicity lynxRow )
     ; ( "W", getDegreeOfVisualImpairment lynxRow )
     ; ( "AA", getColumnCached typeof<MajorCauseOfVisualImpairment> (Some <| Ok OtherCausesOfVisualImpairment) lynxRow.intake_eye_condition )
@@ -461,7 +477,8 @@ let mapToDemographicsRow
     ; ( "AK", getMentalHealthImpairment lynxRow )
     ; ( "AL", getOtherImpairment lynxRow )
     ; ( "AM", getTypeOfResidence lynxRow )
-    ; ( "AS", getColumnCached typeof<SourceOfReferral> None lynxRow.intake_referred_by )
+    // ; ( "AS", getColumnCached typeof<SourceOfReferral> None lynxRow.intake_referred_by )
+    ; ( "AS", getReferrer lynxRow )
     ; ( "BF", getColumnCached typeof<County> None lynxRow.mostRecentAddress_county )
     ]
     // // For troubleshooting (to be able to compare the rows with the transformed ones).
@@ -592,8 +609,8 @@ let mapToServicesRow (lynxRow: LynxRow) : OIBRow =
       // TODO "case_status_conundrum"
       //      `CaseStatus` affects `LivingSituationOutcomes` (column W) and `HomeAndCommunityInvolvementOutcomes` (column AA), so if it is always assumed to be `Assessed`, then there is no point in every mapping to `NotAssessed`.
     ; ( "V",  (Ok Assessed) ) // CaseStatus
-    ; ( "W",  getOutcomes lynxRow )
-    ; ( "AA", getOutcomes lynxRow )
+    ; ( "W",  getOutcomes lynxRow ) // LivingSituationOutcomes
+    ; ( "AA", getOutcomes lynxRow ) // HomeAndCommunityInvolvementOutcomes
       // TODO Add to LYNX first then here
     // ; ( "AE", getColumnCached typeof<EmploymentOutcomes> None lynxRow.plan_employment_outcomes )
     ]
@@ -702,3 +719,6 @@ let getServices (lynxData: LynxData) : OIBRow seq =
            )
         |> Seq.toList
     )
+
+// let l = lynxQuery connectionString Q1 2023;;let ll = lynxQuery connectionString Q1 2022;; let d = getDemographics l;; let dd = getDemographics ll;; let s = getServices l;; let ss = getServices ll;;
+// let o = openExcelFileWithNPOI "20231011_protected_7-OB_Report-Data-Collection-Tool_V2.xlsx";; populateSheet dd o 3;; populateSheet ss o 4;; saveWorkbook o "2022-2023.xlsx";;

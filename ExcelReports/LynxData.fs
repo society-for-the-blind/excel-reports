@@ -11,6 +11,8 @@ open System.Reflection
 open Npgsql.FSharp
 open System.Text.RegularExpressions
 
+open OIBTypes
+
 type LynxColumn = {
     ColumnName : string;
     ColumnType : Type;
@@ -206,11 +208,36 @@ let getRecordFieldNamesAndTypes<'T, 'U> (mapper: FieldInfo -> 'U) =
     typeof<'T>.GetFields(BindingFlags.Public ||| BindingFlags.Instance)
     |> Array.map mapper
 
+type Quarter =
+    | Q1
+    | Q2
+    | Q3
+    | Q4
+
 // NOTE: add_SQL_aliases
 // 1. Update `match` in the `queryColumns` variable.
 // 2. Update `function` clause in the `exeReader` function.
 // 3. If something is still amiss, uncommend the `printfn` statements.
-let lynxQuery (connectionString: string) (grantYear: int) : LynxData =
+let lynxQuery (connectionString: string) (quarter: Quarter) (grantYear: int): LynxData =
+
+    let toStartEndDates (q: Quarter) (grantYear: int) =
+        let startDate =
+            match q with
+            | Q1 -> System.DateOnly (grantYear    , 10, 1)
+            | Q2 -> System.DateOnly (grantYear + 1,  1, 1)
+            | Q3 -> System.DateOnly (grantYear + 1,  4, 1)
+            | Q4 -> System.DateOnly (grantYear + 1,  7, 1)
+
+        ( startDate
+        , startDate.AddMonths(3).AddDays(-1)
+        )
+
+    let grantYearStart = toStartEndDates Q1 grantYear |> fst
+    let grantYearEnd   = toStartEndDates Q4 grantYear |> snd
+
+    // `quarterStart` will always be `grantYearStart`
+    // because the OIB report is a cumulative one
+    let quarterEnd = toStartEndDates quarter grantYear |> snd
 
     let (lynxCols: LynxColumn array) =
         getRecordFieldNamesAndTypes<LynxRow,LynxColumn> toLynxColumn
@@ -256,7 +283,7 @@ let lynxQuery (connectionString: string) (grantYear: int) : LynxData =
 
     let baseSelect = "SELECT " + queryColumns + " FROM " + joins
 
-    let whereClause = $"WHERE note.note_date >= '{string grantYear}-10-01'::date AND note.note_date < '{string (grantYear+1)}-09-30'::date"
+    let whereClause = $"WHERE note.note_date >= '{grantYearStart.ToString()}'::date AND note.note_date < '{quarterEnd.ToString()}'::date"
 
     // NOTE 2023-12-01_1347 Should be irrelevant.
     // let groupByClause = "GROUP BY " + queryColumns
@@ -307,9 +334,9 @@ let lynxQuery (connectionString: string) (grantYear: int) : LynxData =
     |> Sql.query query
     |> Sql.execute exeReader
     |> fun (q: LynxQuery) ->
-        { grantYearStart = System.DateOnly(grantYear, 10, 1)
-        // See `getAgeAtApplication` in `Library.fs`
-        ; grantYearEnd = System.DateOnly((grantYear+1), 9, 30)
+        { grantYearStart = grantYearStart
+        // Only used in `getAgeAtApplication` in `Library.fs`
+        ; grantYearEnd = grantYearEnd
         ; lynxQuery = q
         }
 
