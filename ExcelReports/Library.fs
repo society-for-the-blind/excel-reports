@@ -46,7 +46,27 @@ open FSharp.Reflection
 //
 // but it's not really worth it.
 
-let getClientName (lynxRow: LynxRow): Result<IOIBString, string> =
+// TODO ok for now, but may need to be replaced with
+//      a more meaningful (constrained) type
+type ColumnName = string
+type OIBResult = Result<IOIBString, string>
+type OIBColumn = ColumnName * OIBResult
+type OIBRow = OIBColumn list
+
+// NOTE "Why not in `ClientOIBRows`?"
+//      Because   this   is    simply   to   document   that
+//      `getDemographics` and `getServices` return data that
+//      can be pasted directly to their respective sheets in
+//      the OIB Excel file.
+type OIBSheetData = OIBRow seq
+
+// TODO ok for now, but may need to be replaced with
+//      a more meaningful type
+type Client = string
+type ClientOIBRows = (Client * OIBRow seq)
+type OIBRowsGroupedAndOrderedByClientName = ClientOIBRows seq
+
+let getClientName (lynxRow: LynxRow): OIBResult =
     let middleName = Option.defaultValue "" lynxRow.contact_middle_name
     let firstAndLastNames =
         ( lynxRow.contact_last_name
@@ -63,7 +83,7 @@ let getClientName (lynxRow: LynxRow): Result<IOIBString, string> =
 let getIndividualsServed
     (lynxRow: LynxRow)
     (grantYearStart: System.DateOnly)
-    : Result<IOIBString, string> =
+    : OIBResult =
 
     match lynxRow.intake_intake_date with
     | None ->
@@ -78,7 +98,7 @@ let getIndividualsServed
 let getAgeAtApplication
     (lynxRow: LynxRow)
     (grantYearEnd: System.DateOnly)
-    : Result<IOIBString, string> =
+    : OIBResult =
 
     match lynxRow.intake_birth_date with
     | None ->
@@ -202,7 +222,7 @@ let (|OIBValue|_|)
 *)
 let (|OIBCase|)
     (iOIBStringType: System.Type)
-    (returnIfMatchFails: Result<IOIBString, string> option)
+    (returnIfMatchFails: OIBResult option)
     (valueToMatch: string option) =
 
     match valueToMatch with
@@ -221,13 +241,13 @@ let getUnionType (case: obj) =
     let caseType = case.GetType()
     FSharpType.GetUnionCases(caseType).[0].DeclaringType
 
-let getRace (lynxRow: LynxRow) : Result<IOIBString, string> =
+let getRace (lynxRow: LynxRow) : OIBResult =
     let raceType = typeof<Race>
     match lynxRow.intake_ethnicity with
     | Some "Two or More Races" -> Ok TwoOrMoreRaces
     | OIBCase raceType None result -> result
 
-let getEthnicity (lynxRow: LynxRow) : Result<IOIBString, string> =
+let getEthnicity (lynxRow: LynxRow) : OIBResult =
     // See HISTORICAL NOTEs 2023-12-10_2222 and
     // 2023-12-10_2232 in `getRace`.
     // -> FOLLOW-UP NOTE 2023-12-20_1156
@@ -249,7 +269,7 @@ let getEthnicity (lynxRow: LynxRow) : Result<IOIBString, string> =
     | (_, Some _)                    -> Ok No
     | (_, None)                      -> Ok No
 
-let getDegreeOfVisualImpairment (lynxRow: LynxRow) : Result<IOIBString, string> =
+let getDegreeOfVisualImpairment (lynxRow: LynxRow) : OIBResult =
     let degreeType = typeof<DegreeOfVisualImpairment>
     match lynxRow.intake_degree with
     // Historical LYNX options
@@ -269,9 +289,9 @@ let getDegreeOfVisualImpairment (lynxRow: LynxRow) : Result<IOIBString, string> 
 // === HELPERS
 let getColumn
     (columnType: System.Type)
-    (nonOIBDefault: Result<IOIBString, string> option)
+    (nonOIBDefault: OIBResult option)
     (lynxColumn: string option)
-    : Result<IOIBString, string> =
+    : OIBResult =
 
     // See NOTE "FS0025: Incomplete pattern match" warning above
     match lynxColumn with
@@ -293,9 +313,9 @@ let cache =
 
 let getColumnCached
     (columnType: System.Type)
-    (nonOIBDefault: Result<IOIBString, string> option)
+    (nonOIBDefault: OIBResult option)
     (lynxColumn: string option)
-    : Result<IOIBString, string> =
+    : OIBResult =
     let key = (columnType, nonOIBDefault, lynxColumn)
     match cache.TryGetValue(key) with
     | true, value -> value
@@ -304,7 +324,7 @@ let getColumnCached
         cache.[key] <- value
         value
 
-let boolOptsToResultYesNo (lynxColumns: bool option list) : Result<IOIBString, string> =
+let boolOptsToResultYesNo (lynxColumns: bool option list) : OIBResult =
 
     let optTrueOrNone = function
         | Some b -> b
@@ -366,14 +386,14 @@ let boolOptsToResultYesNo (lynxColumns: bool option list) : Result<IOIBString, s
 //   `lynxRow.intake_dexterity`       <->
 //
 // In the case of the first 3, the presence of a value is crucial. The rest of the OIB columns are computed from multiple LYNX fields, so they can get away with a few missing values, but if all are missing, then then a human has to look into what is happening.
-let getCognitiveImpairment (lynxRow: LynxRow) : Result<IOIBString, string> =
+let getCognitiveImpairment (lynxRow: LynxRow) : OIBResult =
     [ lynxRow.intake_alzheimers
     ; lynxRow.intake_learning_disability
     ; lynxRow.intake_memory_loss
     ]
     |> boolOptsToResultYesNo
 
-let getMentalHealthImpairment (lynxRow: LynxRow) : Result<IOIBString, string> =
+let getMentalHealthImpairment (lynxRow: LynxRow) : OIBResult =
     [ ( lynxRow.intake_mental_health
         |> Option.map (fun _ -> true)
       )
@@ -381,7 +401,7 @@ let getMentalHealthImpairment (lynxRow: LynxRow) : Result<IOIBString, string> =
     ]
     |> boolOptsToResultYesNo
 
-let getOtherImpairment (lynxRow: LynxRow) : Result<IOIBString, string> =
+let getOtherImpairment (lynxRow: LynxRow) : OIBResult =
     [ lynxRow.intake_geriatric
     ; lynxRow.intake_stroke
     ; lynxRow.intake_seizure
@@ -403,7 +423,7 @@ let getOtherImpairment (lynxRow: LynxRow) : Result<IOIBString, string> =
     ]
     |> boolOptsToResultYesNo
 
-let getTypeOfResidence (lynxRow: LynxRow) : Result<IOIBString, string> =
+let getTypeOfResidence (lynxRow: LynxRow) : OIBResult =
     let residenceType = typeof<TypeOfResidence>
     match lynxRow.intake_residence_type with
     // Historical LYNX options
@@ -416,7 +436,7 @@ let getTypeOfResidence (lynxRow: LynxRow) : Result<IOIBString, string> =
     | OIBCase residenceType None result ->
         result
 
-let getReferrer (lynxRow: LynxRow) : Result<IOIBString, string> =
+let getReferrer (lynxRow: LynxRow) : OIBResult =
     let referrerType = typeof<SourceOfReferral>
     match lynxRow.intake_referred_by with
     // Historical LYNX options
@@ -426,7 +446,7 @@ let getReferrer (lynxRow: LynxRow) : Result<IOIBString, string> =
 
 
 // ONLY DELETE AFTER THE HISTORICAL NOTE ARE MOVED TO THE DOCS!
-// let getRace (lynxRow: LynxRow) : Result<IOIBString, string> =
+// let getRace (lynxRow: LynxRow) : OIBResult =
 //     let raceType = typeof<Race>
 //     match lynxRow.intake_ethnicity with
 //       // HISTORICAL NOTE 2023-12-10_2222
@@ -451,12 +471,6 @@ let getReferrer (lynxRow: LynxRow) : Result<IOIBString, string> =
 //         | other -> Error $"Value '{other}' in Lynx is not a valid OIB option."
 //     | None ->
 //         Error "Value is missing in LYNX."
-
-// TODO ok for now, but may need to be replaced with
-//      a more meaningful type
-type ColumnName = string
-type OIBColumn = ColumnName * Result<IOIBString, string>
-type OIBRow = OIBColumn list
 
 let mapToDemographicsRow
     (grantYearStart: System.DateOnly)
@@ -496,19 +510,6 @@ let groupLynxRowsByClientName (rows: LynxQuery) =
             | Error str -> str
         )
 
-// TODO ok for now, but may need to be replaced with
-//      a more meaningful type
-type ClientName = string
-type ClientOIBRows = (ClientName * OIBRow seq)
-type OIBRowsGroupedAndOrderedByClientName = ClientOIBRows seq
-
-// NOTE "Why not in `ClientOIBRows`?"
-//      Because   this   is    simply   to   document   that
-//      `getDemographics` and `getServices` return data that
-//      can be pasted directly to their respective sheets in
-//      the OIB Excel file.
-type OIBSheetData = OIBRow seq
-
 let getTabData
     (toOIBRows: LynxRow -> OIBRow )
     (lynxData: LynxData)
@@ -517,10 +518,10 @@ let getTabData
     lynxData.lynxQuery
     |> groupLynxRowsByClientName
     |> Seq.sortBy fst
-    |> Seq.map (fun (clientName, lynxRows) ->
+    |> Seq.map (fun (client: Client, lynxRows) ->
         lynxRows
         |> Seq.map toOIBRows
-        |> fun oibRows -> (clientName, oibRows)
+        |> fun oibRows -> (client, oibRows)
        )
 
 let getDemographics (lynxData: LynxData) : OIBSheetData =
@@ -581,10 +582,10 @@ let populateSheet (rows: OIBSheetData) (xlsx: XSSFWorkbook) (sheetNumber: int) =
 
 // ---SERVICES---------------------------------------------------------
 
-// type OIBColumn = string * Result<IOIBString, string>
+// type OIBColumn = string * OIBResult
 // type OIBRow = OIBColumn list
 
-let getOutcomes (lynxRow: LynxRow) : Result<IOIBString, string> =
+let getOutcomes (lynxRow: LynxRow) : OIBResult =
     // let degreeType = typeof<DegreeOfVisualImpairment>
     match lynxRow.plan_living_plan_progress with
     | Some "Plan complete, no difference in ability to maintain living situation" -> Ok Maintained
@@ -593,14 +594,14 @@ let getOutcomes (lynxRow: LynxRow) : Result<IOIBString, string> =
     | other -> Error $"Error: LYNX value: '{other}'."
     // Why no `NotAssessed`? See `case_status_conundrum` TODO below.
 
-// let getPlanDate (lynxRow: LynxRow) : Result<IOIBString, string> =
+// let getPlanDate (lynxRow: LynxRow) : OIBResult =
 //     match lynxRow.plan_plan_date with
 //     | Some date ->
 //         Ok (PlanDate date)
 //     | None ->
 //         Error "No plan date in LYNX."
 
-let getPlanModified (lynxRow: LynxRow) : Result<IOIBString, string> =
+let getPlanModified (lynxRow: LynxRow) : OIBResult =
     match lynxRow.plan_modified with
     | Some date ->
         Ok (PlanModified date)
@@ -696,7 +697,7 @@ let mergeOIBColumns
         | :? IOIBOutcome ->
             (colNameA, okA)
 
-let getServices' (lynxData: LynxData) : OIBSheetData =
+let getServices (lynxData: LynxData) : OIBSheetData =
     lynxData
     |> getTabData mapToServicesRow
     |> Seq.map (fun ((_clientName, oibRows): ClientOIBRows) ->
@@ -716,6 +717,73 @@ let getServices' (lynxData: LynxData) : OIBSheetData =
            )
         |> Seq.toList
     )
+
+let checkATServicesAndOutcome (row: OIBRow) =
+    // Not  total  on  purpose:  it  should only  be called
+    // with `Ok` `OIBResult`s; if  called with `Error` then
+    // that is a bug.
+    let okToError
+        ( ( (letter: ColumnName)
+          , (Ok (oibType: IOIBString): OIBResult)
+          ): OIBColumn
+        )
+        : OIBColumn
+        =
+        (letter, Error (toOIBString oibType))
+
+    let findColumn (letter: ColumnName) (row: OIBRow) : OIBColumn =
+        row
+        |> List.find (
+               function
+               | ((letter': ColumnName, _): OIBColumn) -> letter = letter'
+           )
+
+    let replaceColumns
+        (row: OIBRow)
+        (replacements: OIBColumn list)
+        : OIBRow =
+
+        let replacementLetters: ColumnName list =
+            replacements |> List.map (fun (letter, _) -> letter)
+
+        let needsReplacement (letter: ColumnName) =
+            List.contains letter replacementLetters
+
+        row
+        |> List.map (
+               function
+               | ((letter: ColumnName, _): OIBColumn) when needsReplacement(letter) ->
+                   findColumn letter replacements
+               | otherColumn -> otherColumn
+           )
+
+    let atServiceYesNo = (findColumn "D" row)
+    let      atOutcome = (findColumn "E" row)
+
+    let affectedColumns =
+        [ atServiceYesNo
+        ;      atOutcome
+        ]
+
+    let resultsToCompare =
+        affectedColumns
+        |> List.map snd
+
+    let replacementColumns : OIBColumn list =
+        match resultsToCompare with
+        | [ Ok no; outcomeResult ]
+            when no = (No :> IOIBString) ->
+
+            match outcomeResult with
+            | Ok outcome
+                when outcome = (NotAssessed :> IOIBString) ->
+                []
+            | _ ->
+                affectedColumns
+                |> List.map okToError
+        | _ -> []
+
+    replaceColumns row replacementColumns
 
 // let l = lynxQuery connectionString Q1 2023;;let ll = lynxQuery connectionString Q1 2022;; let d = getDemographics l;; let dd = getDemographics ll;; let s = getServices l;; let ss = getServices ll;;
 // let o = openExcelFileWithNPOI "20231011_protected_7-OB_Report-Data-Collection-Tool_V2.xlsx";; populateSheet dd o 3;; populateSheet ss o 4;; saveWorkbook o "2022-2023.xlsx";;
