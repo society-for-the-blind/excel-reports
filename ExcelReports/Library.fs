@@ -502,6 +502,13 @@ type ClientName = string
 type ClientOIBRows = (ClientName * OIBRow seq)
 type OIBRowsGroupedAndOrderedByClientName = ClientOIBRows seq
 
+// NOTE "Why not in `ClientOIBRows`?"
+//      Because   this   is    simply   to   document   that
+//      `getDemographics` and `getServices` return data that
+//      can be pasted directly to their respective sheets in
+//      the OIB Excel file.
+type OIBSheetData = OIBRow seq
+
 let getTabData
     (toOIBRows: LynxRow -> OIBRow )
     (lynxData: LynxData)
@@ -516,7 +523,7 @@ let getTabData
         |> fun oibRows -> (clientName, oibRows)
        )
 
-let getDemographics (lynxData: LynxData) : OIBRow seq =
+let getDemographics (lynxData: LynxData) : OIBSheetData =
     lynxData
     |> getTabData (mapToDemographicsRow lynxData.grantYearStart lynxData.grantYearEnd)
     |> Seq.map (fun ((_clientName, oibRows): ClientOIBRows) ->
@@ -558,12 +565,18 @@ let fillRow (dRow: OIBRow) (rowNumber: string) (sheetNumber: int) (xlsx: XSSFWor
 //         | Error str -> str
 //     | _ -> failwith "Malformed demographics row."
 
-let populateSheet (dRows: OIBRow seq) (xlsx: XSSFWorkbook) (sheetNumber: int) =
-    dRows
+let populateSheet (rows: OIBSheetData) (xlsx: XSSFWorkbook) (sheetNumber: int) =
+    rows
     // |> Seq.sortBy extractClientName
     |> Seq.iteri (
         fun i row ->
-         fillRow row (string(i + 7)) sheetNumber xlsx
+             // TODO "sheet_start_row"
+             //      The  numbe r 7  below  denotes  the  start  row from
+             //      where  the  "rows"  is  `OIBSheetData`  need  to  be
+             //      pasted; both  the "demographics" and  the "services"
+             //      sheets start from row 7, but it should probably be a
+             //      parameter.
+             fillRow row (string(i + 7)) sheetNumber xlsx
        )
 
 // ---SERVICES---------------------------------------------------------
@@ -683,7 +696,7 @@ let mergeOIBColumns
         | :? IOIBOutcome ->
             (colNameA, okA)
 
-let getServices (lynxData: LynxData) : OIBRow seq =
+let getServices' (lynxData: LynxData) : OIBSheetData =
     lynxData
     |> getTabData mapToServicesRow
     |> Seq.map (fun ((_clientName, oibRows): ClientOIBRows) ->
