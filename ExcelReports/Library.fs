@@ -541,13 +541,17 @@ let getDemographics (lynxData: LynxData) : OIBSheetData =
         |> Seq.exactlyOne
     )
 
-let fillRow (dRow: OIBRow) (rowNumber: string) (sheetNumber: int) (xlsx: XSSFWorkbook) =
+// TODO clean up side effect galore (e.g., `resetCellColor` - or at least make them explicit...
+let fillRow (row: OIBRow) (rowNumber: string) (sheetNumber: int) (xlsx: XSSFWorkbook) =
     let errorColor = hexStringToRGB "#ffc096"
-    dRow
+    row
     |> Seq.iter (
         fun ((column, result): OIBColumn) ->
             // let rowNum = string(i + 7)
             let cell = getCell xlsx sheetNumber (column + rowNumber)
+            // Sometimes using a previously generated report as a template, and error highlights need to be cleared - except for "Case Status" (column V) as it has a "default" color set by DOR.
+            // TODO: implement setting "Case Status" and not setting it to "Assessed" indiscriminately.
+            if (cell.Address.Column <> 21) then resetCellColor cell
             let cellString =
                 match result with
                 | Ok oibValue ->
@@ -558,8 +562,8 @@ let fillRow (dRow: OIBRow) (rowNumber: string) (sheetNumber: int) (xlsx: XSSFWor
             updateCell cell cellString
     )
 
-// let extractClientName (dRow: OIBRow) =
-//     match dRow with
+// let extractClientName (row: OIBRow) =
+//     match row with
 //     | (head :: _) ->
 //         match (snd head) with
 //         | Ok name -> toOIBString name
@@ -586,12 +590,15 @@ let populateSheet (rows: OIBSheetData) (xlsx: XSSFWorkbook) (sheetNumber: int) =
 // type OIBRow = OIBColumn list
 
 let getOutcomes (lynxRow: LynxRow) : OIBResult =
-    // let degreeType = typeof<DegreeOfVisualImpairment>
     match lynxRow.plan_living_plan_progress with
-    | Some "Plan complete, no difference in ability to maintain living situation" -> Ok Maintained
-    | Some "Plan complete, feeling more confident in ability to maintain living situation" -> Ok Increased
-    | Some "Plan complete, feeling less confident in ability to maintain living situation" -> Ok Decreased
-    | other -> Error $"Error: LYNX value: '{other}'."
+    | Some "Plan complete, no difference in ability to maintain living situation" ->
+        Ok Maintained
+    | Some "Plan complete, feeling more confident in ability to maintain living situation" ->
+        Ok Increased
+    | Some "Plan complete, feeling less confident in ability to maintain living situation" ->
+        Ok Decreased
+    | other ->
+        Error $"Outcome needs to be set in LYNX or 'Case Status' (column V) needs to be 'Pending'."
     // Why no `NotAssessed`? See `case_status_conundrum` TODO below.
 
 // let getPlanDate (lynxRow: LynxRow) : OIBResult =
@@ -718,7 +725,25 @@ let getServices (lynxData: LynxData) : OIBSheetData =
         |> Seq.toList
     )
 
-let checkATServicesAndOutcome (row: OIBRow) =
+(*
+    | SCENARIO | RECEIVED | OUTCOME |
+    |          | SERVICE  |   SET   |
+    |----------+----------+---------|
+    |     1    |    Yes   |   Yes   | <- no brainer
+    |     2    |    Yes   |   No    | <- disallowed
+    |     3    |    No    |   Yes   | <- allowed with condition (see below)
+    |     4    |    No    |   No    | <- no brainer
+    |----------+----------+---------|
+
+    Scenario  2  is  allowed,  if the  number of clients
+    having received  services is higher than  the number
+    of clients  having been assessed. No  checks needed,
+    because once  the highlighted scenario 3  errors are
+    corrected,  then  the  this  condition  will  always
+    stand.
+*)
+let checkATServicesAndOutcome (row: OIBRow) : OIBRow =
+
     // Not  total  on  purpose:  it  should only  be called
     // with `Ok` `OIBResult`s; if  called with `Error` then
     // that is a bug.
@@ -785,5 +810,15 @@ let checkATServicesAndOutcome (row: OIBRow) =
 
     replaceColumns row replacementColumns
 
+// TODO add functions to achieve the same as the fsi commands below, and make constraint checks pluggable as in the last comment block.
+
 // let l = lynxQuery connectionString Q1 2023;;let ll = lynxQuery connectionString Q1 2022;; let d = getDemographics l;; let dd = getDemographics ll;; let s = getServices l;; let ss = getServices ll;;
 // let o = openExcelFileWithNPOI "20231011_protected_7-OB_Report-Data-Collection-Tool_V2.xlsx";; populateSheet dd o 3;; populateSheet ss o 4;; saveWorkbook o "2022-2023.xlsx";;
+
+(*
+2 changes:
++ using a previously generated report as a template
++ "plugging in" the `checkATServicesAndOutcome` function to highlight additional errors
+
+let o = openExcelFileWithNPOI "2023_Q1_rev6_012924-employment-filled.xlsx";; populateSheet d o 3;; populateSheet ( Seq.map checkATServicesAndOutcome s) o 4;; saveWorkbook o "2023_Q1_rev10_012924-employment-filled.xlsx";;
+*)

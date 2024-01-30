@@ -85,6 +85,7 @@ let hexStringToRGB (hexString: string) =
         let b = System.Convert.ToByte(hexString.Substring(4, 2), 16)
         [|r; g; b|]
 
+// TODO: refactor `changeCellColor` and `resetCellColor` as they are almost identical.
 let changeCellColor (cell: ICell) (rgb: byte array) =
     let xssfCell: NPOI.XSSF.UserModel.XSSFCell = cell :?> NPOI.XSSF.UserModel.XSSFCell
     let newCellStyle: NPOI.SS.UserModel.ICellStyle = cloneCellStyle xssfCell
@@ -95,6 +96,17 @@ let changeCellColor (cell: ICell) (rgb: byte array) =
         let color = new NPOI.XSSF.UserModel.XSSFColor(rgb)
         xssfCellStyle.FillForegroundXSSFColor <- color
         xssfCellStyle.FillPattern <- NPOI.SS.UserModel.FillPattern.SolidForeground
+    | _ -> failwith "'newCellStyle' cannot be cast to XSSFCellStyle"
+    xssfCell.CellStyle <- newCellStyle
+
+let resetCellColor (cell: ICell) =
+    let xssfCell: NPOI.XSSF.UserModel.XSSFCell = cell :?> NPOI.XSSF.UserModel.XSSFCell
+    let newCellStyle: NPOI.SS.UserModel.ICellStyle = cloneCellStyle xssfCell
+    // newCellStyle.CloneStyleFrom(xssfCell.CellStyle)
+    match newCellStyle with
+    // match xssfCell.CellStyle with
+    | :? NPOI.XSSF.UserModel.XSSFCellStyle as xssfCellStyle ->
+        xssfCellStyle.FillPattern <- NPOI.SS.UserModel.FillPattern.NoFill
     | _ -> failwith "'newCellStyle' cannot be cast to XSSFCellStyle"
     xssfCell.CellStyle <- newCellStyle
 
