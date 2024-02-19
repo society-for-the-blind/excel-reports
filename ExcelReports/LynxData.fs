@@ -195,6 +195,7 @@ type LynxRow = {
     mostRecentAddress_county   : string option;
 }
 
+// see TODO 2024-02-19_1348 rename_lynx_prefix_oib_report
 type LynxQuery = LynxRow list
 
 type LynxData = {
@@ -213,6 +214,15 @@ type Quarter =
     | Q2
     | Q3
     | Q4
+
+// TODO 2024-02-19_1348 rename_lynx_prefix_oib_report
+//
+// The  `lynxQuery` function  and the  types `LynxRow`,
+// `LynxColumn`,   `LynxData`  (and   probably  others)
+// should  be renamed  to reflect  that they  relate to
+// the  quarterly OIB  report (e.g.,  `oibReportQuery`,
+// `OIBReportRow`,  `OIBReportColumn`,  `OIBReportData`
+// respectively).
 
 // NOTE: add_SQL_aliases
 // 1. Update `match` in the `queryColumns` variable.
