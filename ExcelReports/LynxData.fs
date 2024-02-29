@@ -63,7 +63,7 @@ let (|GetType|_|) (ct: Type) (t: Type) =
 
 // TODO 2023-12-01_1342
 //      Remove the hard-coded password.
-let connectionString = "postgres://postgres:password@192.168.64.4:5432/lynx"
+// let connectionString = "postgres://postgres:password@192.168.64.4:5432/lynx"
 
 // Record types that can be used to build SQL queries.
 type ISQLQueryColumnable =
@@ -463,12 +463,12 @@ let queryBuilder<'T when 'T :> ISQLQueryColumnable>
 
     printfn $"QUERY: {queryString}"
 
-    connectionString
+    args.connectionString
     |> Sql.connect
     |> Sql.query queryString
     |> Sql.execute ( rowReaderBuilder<'T> args.sqlAliases )
 
-let assignmentReportQuery<'T when 'T :> ISQLQueryColumnable>
+let assignmentReportQuery
     (connectionString: string)
     : ISQLQueryColumnable list
     =
@@ -507,7 +507,7 @@ let quarterToStartAndEndDates (q: Quarter) (grantYear: int) =
     )
 
 // TODO There is also a non-7OB report, so this function should be generalized to support both (either by splitting out the generic parts or by adding an extra parameter; all the non-7OB parts in LYNX are the same as the 7OB ones but containing the "1854" label somewhere).
-let quarterly7OBReportQuery<'T when 'T :> ISQLQueryColumnable>
+let quarterly7OBReportQuery
     (connectionString: string)
     (quarter: Quarter)
     (grantYear: int)
@@ -550,7 +550,7 @@ let quarterly7OBReportQuery<'T when 'T :> ISQLQueryColumnable>
     // let groupByClause = "GROUP BY " + queryColumns
     // let orderByClause = "ORDER BY CONCAT(c.last_name, ', ', c.first_name)"
 
-    queryBuilder<'T>
+    queryBuilder<Quarterly7OBReportQueryRow>
         { connectionString = connectionString
         ; sqlQueryStringAfterFROM = joins + whereClause
         ; sqlAliases =

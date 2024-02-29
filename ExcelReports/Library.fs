@@ -5,18 +5,21 @@
 #load "ExcelReports/ExcelFunctions.fs";;
 open ExcelReports.ExcelFunctions;;
 
+#load "ExcelReports/OIBTypes.fs";;
+open ExcelReports.OIBTypes;;
+
 #r "nuget: Npgsql.FSharp, 5.7.0";;
 #load "ExcelReports/LynxData.fs";;
 open ExcelReports.LynxData;;
-
-#load "ExcelReports/OIBTypes.fs";;
-open ExcelReports.OIBTypes;;
 
 #load "ExcelReports/Library.fs";;
 open ExcelReports.OIB;;
 
 -- oneliner:
-#r "nuget: NPOI, 2.6.2";; #load "ExcelReports/ExcelFunctions.fs";; open ExcelReports.ExcelFunctions;; #r "nuget: Npgsql.FSharp, 5.7.0";; #load "ExcelReports/LynxData.fs";; open ExcelReports.LynxData;; #load "ExcelReports/OIBTypes.fs";; open ExcelReports.OIBTypes;; #load "ExcelReports/Library.fs";; open ExcelReports.OIB;;
+#r "nuget: NPOI, 2.6.2";; #load "ExcelReports/ExcelFunctions.fs";; open ExcelReports.ExcelFunctions;; #load "ExcelReports/OIBTypes.fs";; open ExcelReports.OIBTypes;; #r "nuget: Npgsql.FSharp, 5.7.0";; #load "ExcelReports/LynxData.fs";; open ExcelReports.LynxData;; #load "ExcelReports/Library.fs";; open ExcelReports.OIB;;
+
+generate7OBreport conn 2023 Q2 "2023_Q2_OB7_prod_rev1.xlsx";;
+generate7OBreport conn 2023 Q1 "2023_Q1_OB7_prod_rev1.xlsx";;
 *)
 
 open ExcelFunctions
@@ -66,26 +69,26 @@ type Client = string
 type ClientOIBRows = (Client * OIBRow seq)
 type OIBRowsGroupedAndOrderedByClientName = ClientOIBRows seq
 
-let getClientName (lynxRow: LynxRow): OIBResult =
-    let middleName = Option.defaultValue "" lynxRow.contact_middle_name
+let getClientName (oib7Row: Quarterly7OBReportQueryRow): OIBResult =
+    let middleName = Option.defaultValue "" oib7Row.contact_middle_name
     let firstAndLastNames =
-        ( lynxRow.contact_last_name
-        , lynxRow.contact_first_name
+        ( oib7Row.contact_last_name
+        , oib7Row.contact_first_name
         )
     match firstAndLastNames with
     | (None, _)
     | (_, None) ->
-        Error $"Client name is missing in LYNX. (Contact ID: {lynxRow.contact_id})"
+        Error $"Client name is missing in LYNX. (Contact ID: {oib7Row.contact_id})"
     | (Some last, Some first) ->
         let name = (last.Trim() + ", " + first.Trim() + " " + middleName.Trim())
         Ok (ClientName name)
 
 let getIndividualsServed
-    (lynxRow: LynxRow)
+    (oib7Row: Quarterly7OBReportQueryRow)
     (grantYearStart: System.DateOnly)
     : OIBResult =
 
-    match lynxRow.intake_intake_date with
+    match oib7Row.intake_intake_date with
     | None ->
         Error "Intake date is not set in LYNX."
     | Some intakeDate ->
@@ -96,17 +99,17 @@ let getIndividualsServed
 // Why `grantYearEnd`?
 // Because a person may become 55 during the grant year.
 let getAgeAtApplication
-    (lynxRow: LynxRow)
+    (oib7Row: Quarterly7OBReportQueryRow)
     (grantYearEnd: System.DateOnly)
     : OIBResult =
 
-    match lynxRow.intake_birth_date with
+    match oib7Row.intake_birth_date with
     | None ->
-        Error $"Birth date is not set in LYNX. (Contact ID: {lynxRow.contact_id})"
+        Error $"Birth date is not set in LYNX. (Contact ID: {oib7Row.contact_id})"
     | Some (birthDate: System.DateOnly) ->
         match (birthDate > grantYearEnd) with
         | true ->
-            Error $"Invalid date of birth: {birthDate}. (Contact ID: {lynxRow.contact_id})"
+            Error $"Invalid date of birth: {birthDate}. (Contact ID: {oib7Row.contact_id})"
         | false ->
             let grantYearEndInDays = grantYearEnd.DayNumber
             let birthDateInDays = birthDate.DayNumber
@@ -119,7 +122,7 @@ let getAgeAtApplication
             // 55, but that is probably a clerical error as the SIP
             // program is only for individuals above 55.
             | _ when age < 55 ->
-                Error $"Age below 55. (DOB: {birthDate}, Contact ID: {lynxRow.contact_id})"
+                Error $"Age below 55. (DOB: {birthDate}, Contact ID: {oib7Row.contact_id})"
             | _ when age < 65 -> Ok AgeBracket55To64
             | _ when age < 75 -> Ok AgeBracket65To74
             | _ when age < 85 -> Ok AgeBracket75To84
@@ -241,13 +244,13 @@ let getUnionType (case: obj) =
     let caseType = case.GetType()
     FSharpType.GetUnionCases(caseType).[0].DeclaringType
 
-let getRace (lynxRow: LynxRow) : OIBResult =
+let getRace (oib7Row: Quarterly7OBReportQueryRow) : OIBResult =
     let raceType = typeof<Race>
-    match lynxRow.intake_ethnicity with
+    match oib7Row.intake_ethnicity with
     | Some "Two or More Races" -> Ok TwoOrMoreRaces
     | OIBCase raceType None result -> result
 
-let getEthnicity (lynxRow: LynxRow) : OIBResult =
+let getEthnicity (oib7Row: Quarterly7OBReportQueryRow) : OIBResult =
     // See HISTORICAL NOTEs 2023-12-10_2222 and
     // 2023-12-10_2232 in `getRace`.
     // -> FOLLOW-UP NOTE 2023-12-20_1156
@@ -262,16 +265,16 @@ let getEthnicity (lynxRow: LynxRow) : OIBResult =
 
     //                 OIB race                  OIB ethnicity
     //             ----------------          ----------------------
-    match (lynxRow.intake_ethnicity, lynxRow.intake_other_ethnicity) with
+    match (oib7Row.intake_ethnicity, oib7Row.intake_other_ethnicity) with
     | (Some "Hispanic or Latino", _) -> Ok Yes
     | (None, Some _)                 -> Ok No
     | (_, Some "Hispanic or Latino") -> Ok Yes
     | (_, Some _)                    -> Ok No
     | (_, None)                      -> Ok No
 
-let getDegreeOfVisualImpairment (lynxRow: LynxRow) : OIBResult =
+let getDegreeOfVisualImpairment (oib7Row: Quarterly7OBReportQueryRow) : OIBResult =
     let degreeType = typeof<DegreeOfVisualImpairment>
-    match lynxRow.intake_degree with
+    match oib7Row.intake_degree with
     // Historical LYNX options
     | Some "Light Perception Only" -> Ok LegallyBlind
     | Some "Low Vision" -> Ok SevereVisionImpairment
@@ -282,9 +285,9 @@ let getDegreeOfVisualImpairment (lynxRow: LynxRow) : OIBResult =
     // The "degree of visual impairment" in the OIB
     // report is mandatory.
     // TODO 2023-12-10_2009 Replace `failtwith`s with a visual cue in the OIB report
-    // | None -> failwith $"Degree of visual impairment is null in LYNX. Client: {lynxRow.contact_id} {getClientName lynxRow}."
+    // | None -> failwith $"Degree of visual impairment is null in LYNX. Client: {oib7Row.contact_id} {getClientName oib7Row}."
     // TODO 2023-12-10_2009 Replace `failtwith`s with a visual cue in the OIB report
-    // | Some other -> failwith $"Degree of visual impairment '{other}' not in OIB report. Client: {lynxRow.contact_id} {getClientName lynxRow}."
+    // | Some other -> failwith $"Degree of visual impairment '{other}' not in OIB report. Client: {oib7Row.contact_id} {getClientName oib7Row}."
 
 // === HELPERS
 let getColumn
@@ -368,64 +371,64 @@ let boolOptsToResultYesNo (lynxColumns: bool option list) : OIBResult =
 //   `intake_memory_loss`         <->
 //   `intake_mental_health`   <->
 //   `intake_substance_abuse` <-> MentalHealthImpairment
-//   `lynxRow.intake_geriatric`       <->
-//   `lynxRow.intake_stroke`          <->
-//   `lynxRow.intake_seizure`         <->
-//   `lynxRow.intake_migraine`        <->
-//   `lynxRow.intake_heart`           <->
-//   `lynxRow.intake_diabetes`        <->
-//   `lynxRow.intake_dialysis`        <->
-//   `lynxRow.intake_cancer`          <-> OtherImpairment
-//   `lynxRow.intake_arthritis`       <->
-//   `lynxRow.intake_high_bp`         <->
-//   `lynxRow.intake_neuropathy`      <->
-//   `lynxRow.intake_pain`            <->
-//   `lynxRow.intake_asthma`          <->
-//   `lynxRow.intake_musculoskeletal` <->
-//   `lynxRow.intake_allergies        <->
-//   `lynxRow.intake_dexterity`       <->
+//   `oib7Row.intake_geriatric`       <->
+//   `oib7Row.intake_stroke`          <->
+//   `oib7Row.intake_seizure`         <->
+//   `oib7Row.intake_migraine`        <->
+//   `oib7Row.intake_heart`           <->
+//   `oib7Row.intake_diabetes`        <->
+//   `oib7Row.intake_dialysis`        <->
+//   `oib7Row.intake_cancer`          <-> OtherImpairment
+//   `oib7Row.intake_arthritis`       <->
+//   `oib7Row.intake_high_bp`         <->
+//   `oib7Row.intake_neuropathy`      <->
+//   `oib7Row.intake_pain`            <->
+//   `oib7Row.intake_asthma`          <->
+//   `oib7Row.intake_musculoskeletal` <->
+//   `oib7Row.intake_allergies        <->
+//   `oib7Row.intake_dexterity`       <->
 //
 // In the case of the first 3, the presence of a value is crucial. The rest of the OIB columns are computed from multiple LYNX fields, so they can get away with a few missing values, but if all are missing, then then a human has to look into what is happening.
-let getCognitiveImpairment (lynxRow: LynxRow) : OIBResult =
-    [ lynxRow.intake_alzheimers
-    ; lynxRow.intake_learning_disability
-    ; lynxRow.intake_memory_loss
+let getCognitiveImpairment (oib7Row: Quarterly7OBReportQueryRow) : OIBResult =
+    [ oib7Row.intake_alzheimers
+    ; oib7Row.intake_learning_disability
+    ; oib7Row.intake_memory_loss
     ]
     |> boolOptsToResultYesNo
 
-let getMentalHealthImpairment (lynxRow: LynxRow) : OIBResult =
-    [ ( lynxRow.intake_mental_health
+let getMentalHealthImpairment (oib7Row: Quarterly7OBReportQueryRow) : OIBResult =
+    [ ( oib7Row.intake_mental_health
         |> Option.map (fun _ -> true)
       )
-    ; lynxRow.intake_substance_abuse
+    ; oib7Row.intake_substance_abuse
     ]
     |> boolOptsToResultYesNo
 
-let getOtherImpairment (lynxRow: LynxRow) : OIBResult =
-    [ lynxRow.intake_geriatric
-    ; lynxRow.intake_stroke
-    ; lynxRow.intake_seizure
-    ; lynxRow.intake_migraine
-    ; lynxRow.intake_heart
-    ; lynxRow.intake_diabetes
-    ; lynxRow.intake_dialysis
-    ; lynxRow.intake_cancer
-    ; lynxRow.intake_arthritis
-    ; lynxRow.intake_high_bp
-    ; lynxRow.intake_neuropathy
-    ; lynxRow.intake_pain
-    ; lynxRow.intake_asthma
-    ; lynxRow.intake_musculoskeletal
-    ; ( lynxRow.intake_allergies
+let getOtherImpairment (oib7Row: Quarterly7OBReportQueryRow) : OIBResult =
+    [ oib7Row.intake_geriatric
+    ; oib7Row.intake_stroke
+    ; oib7Row.intake_seizure
+    ; oib7Row.intake_migraine
+    ; oib7Row.intake_heart
+    ; oib7Row.intake_diabetes
+    ; oib7Row.intake_dialysis
+    ; oib7Row.intake_cancer
+    ; oib7Row.intake_arthritis
+    ; oib7Row.intake_high_bp
+    ; oib7Row.intake_neuropathy
+    ; oib7Row.intake_pain
+    ; oib7Row.intake_asthma
+    ; oib7Row.intake_musculoskeletal
+    ; ( oib7Row.intake_allergies
         |> Option.map (fun _ -> true)
       )
-    ; lynxRow.intake_dexterity
+    ; oib7Row.intake_dexterity
     ]
     |> boolOptsToResultYesNo
 
-let getTypeOfResidence (lynxRow: LynxRow) : OIBResult =
+let getTypeOfResidence (oib7Row: Quarterly7OBReportQueryRow) : OIBResult =
     let residenceType = typeof<TypeOfResidence>
-    match lynxRow.intake_residence_type with
+    match oib7Row.intake_residence_type with
     // Historical LYNX options
     | Some "Community Residential" ->
         Ok SeniorIndependentLiving
@@ -436,9 +439,9 @@ let getTypeOfResidence (lynxRow: LynxRow) : OIBResult =
     | OIBCase residenceType None result ->
         result
 
-let getReferrer (lynxRow: LynxRow) : OIBResult =
+let getReferrer (oib7Row: Quarterly7OBReportQueryRow) : OIBResult =
     let referrerType = typeof<SourceOfReferral>
-    match lynxRow.intake_referred_by with
+    match oib7Row.intake_referred_by with
     // Historical LYNX options
     | Some "DOR" -> Ok StateVRAgency
     | OIBCase referrerType None result ->
@@ -446,9 +449,9 @@ let getReferrer (lynxRow: LynxRow) : OIBResult =
 
 
 // ONLY DELETE AFTER THE HISTORICAL NOTE ARE MOVED TO THE DOCS!
-// let getRace (lynxRow: LynxRow) : OIBResult =
+// let getRace (oib7Row: Quarterly7OBReportQueryRow) : OIBResult =
 //     let raceType = typeof<Race>
-//     match lynxRow.intake_ethnicity with
+//     match oib7Row.intake_ethnicity with
 //       // HISTORICAL NOTE 2023-12-10_2222
 //       // LYNX  used  to  treat  the OIB  report's "Race"  and
 //       // "Ethnicity"  columns  in  one  field,  resulting  in
@@ -475,47 +478,48 @@ let getReferrer (lynxRow: LynxRow) : OIBResult =
 let mapToDemographicsRow
     (grantYearStart: System.DateOnly)
     (grantYearEnd:   System.DateOnly)
-    (lynxRow: LynxRow)
+    (oib7Row: Quarterly7OBReportQueryRow)
     : OIBRow =
     // let demoColumns =
-    [ ( "A", getClientName lynxRow )
-    ; ( "B", getIndividualsServed lynxRow grantYearStart )
-    ; ( "E", getAgeAtApplication  lynxRow grantYearEnd )
-    ; ( "J", getColumnCached typeof<Gender> None lynxRow.intake_gender )
-    // ; ( "N", getColumnCached typeof<Race> None lynxRow.intake_ethnicity )
-    ; ( "N", getRace lynxRow )
-    ; ( "V", getEthnicity lynxRow )
-    ; ( "W", getDegreeOfVisualImpairment lynxRow )
-    ; ( "AA", getColumnCached typeof<MajorCauseOfVisualImpairment> (Some <| Ok OtherCausesOfVisualImpairment) lynxRow.intake_eye_condition )
-    ; ( "AG", boolOptsToResultYesNo [ lynxRow.intake_hearing_loss ] )
-    ; ( "AH", boolOptsToResultYesNo [ lynxRow.intake_mobility ] )
-    ; ( "AI", boolOptsToResultYesNo [ lynxRow.intake_communication ] )
-    ; ( "AJ", getCognitiveImpairment lynxRow )
-    ; ( "AK", getMentalHealthImpairment lynxRow )
-    ; ( "AL", getOtherImpairment lynxRow )
-    ; ( "AM", getTypeOfResidence lynxRow )
-    // ; ( "AS", getColumnCached typeof<SourceOfReferral> None lynxRow.intake_referred_by )
-    ; ( "AS", getReferrer lynxRow )
-    ; ( "BF", getColumnCached typeof<County> None lynxRow.mostRecentAddress_county )
+    [ ( "A", getClientName oib7Row )
+    ; ( "B", getIndividualsServed oib7Row grantYearStart )
+    ; ( "E", getAgeAtApplication  oib7Row grantYearEnd )
+    ; ( "J", getColumnCached typeof<Gender> None oib7Row.intake_gender )
+    // ; ( "N", getColumnCached typeof<Race> None oib7Row.intake_ethnicity )
+    ; ( "N", getRace oib7Row )
+    ; ( "V", getEthnicity oib7Row )
+    ; ( "W", getDegreeOfVisualImpairment oib7Row )
+    ; ( "AA", getColumnCached typeof<MajorCauseOfVisualImpairment> (Some <| Ok OtherCausesOfVisualImpairment) oib7Row.intake_eye_condition )
+    ; ( "AG", boolOptsToResultYesNo [ oib7Row.intake_hearing_loss ] )
+    ; ( "AH", boolOptsToResultYesNo [ oib7Row.intake_mobility ] )
+    ; ( "AI", boolOptsToResultYesNo [ oib7Row.intake_communication ] )
+    ; ( "AJ", getCognitiveImpairment oib7Row )
+    ; ( "AK", getMentalHealthImpairment oib7Row )
+    ; ( "AL", getOtherImpairment oib7Row )
+    ; ( "AM", getTypeOfResidence oib7Row )
+    // ; ( "AS", getColumnCached typeof<SourceOfReferral> None oib7Row.intake_referred_by )
+    ; ( "AS", getReferrer oib7Row )
+    ; ( "BF", getColumnCached typeof<County> None oib7Row.mostRecentAddress_county )
     ]
     // // For troubleshooting (to be able to compare the rows with the transformed ones).
-    // (demoColumns, lynxRow)
+    // (demoColumns, oib7Row)
 
-let groupLynxRowsByClientName (rows: LynxQuery) =
+let groupLynxRowsByClientName (rows: Quarterly7OBReportQueryRow seq) =
     rows
     |> Seq.groupBy (
-        fun lynxRow ->
-            match (getClientName lynxRow) with
+        fun oib7Row ->
+            match (getClientName oib7Row) with
             | Ok clientName -> toOIBString clientName
             | Error str -> str
         )
 
 let getTabData
-    (toOIBRows: LynxRow -> OIBRow )
-    (lynxData: LynxData)
+    (toOIBRows: Quarterly7OBReportQueryRow -> OIBRow )
+    (lynxData: OIBQuarterlyReportData)
     : OIBRowsGroupedAndOrderedByClientName =
 
-    lynxData.lynxQuery
+    lynxData.lynxData
+    |> Seq.map (fun (row: ISQLQueryColumnable) -> row :?> Quarterly7OBReportQueryRow)
     |> groupLynxRowsByClientName
     |> Seq.sortBy fst
     |> Seq.map (fun (client: Client, lynxRows) ->
@@ -524,7 +528,7 @@ let getTabData
         |> fun oibRows -> (client, oibRows)
        )
 
-let getDemographics (lynxData: LynxData) : OIBSheetData =
+let getDemographics (lynxData: OIBQuarterlyReportData) : OIBSheetData =
     lynxData
     |> getTabData (mapToDemographicsRow lynxData.grantYearStart lynxData.grantYearEnd)
     |> Seq.map (fun ((_clientName, oibRows): ClientOIBRows) ->
@@ -570,7 +574,13 @@ let fillRow (row: OIBRow) (rowNumber: string) (sheetNumber: int) (xlsx: XSSFWork
 //         | Error str -> str
 //     | _ -> failwith "Malformed demographics row."
 
-let populateSheet (rows: OIBSheetData) (xlsx: XSSFWorkbook) (sheetNumber: int) =
+let populateSheet
+    (rows: OIBSheetData)
+    (sheetNumber: int)
+    (xlsx: XSSFWorkbook)
+    : XSSFWorkbook
+    =
+
     rows
     // |> Seq.sortBy extractClientName
     |> Seq.iteri (
@@ -583,14 +593,15 @@ let populateSheet (rows: OIBSheetData) (xlsx: XSSFWorkbook) (sheetNumber: int) =
              //      parameter.
              fillRow row (string(i + 7)) sheetNumber xlsx
        )
+    xlsx
 
 // ---SERVICES---------------------------------------------------------
 
 // type OIBColumn = string * OIBResult
 // type OIBRow = OIBColumn list
 
-let getOutcomes (lynxRow: LynxRow) : OIBResult =
-    match lynxRow.plan_living_plan_progress with
+let getOutcomes (oib7Row: Quarterly7OBReportQueryRow) : OIBResult =
+    match oib7Row.plan_living_plan_progress with
     | Some "Plan complete, no difference in ability to maintain living situation" ->
         Ok Maintained
     | Some "Plan complete, feeling more confident in ability to maintain living situation" ->
@@ -601,48 +612,48 @@ let getOutcomes (lynxRow: LynxRow) : OIBResult =
         Error $"Outcome needs to be set in LYNX or 'Case Status' (column V) needs to be 'Pending'."
     // Why no `NotAssessed`? See `case_status_conundrum` TODO below.
 
-// let getPlanDate (lynxRow: LynxRow) : OIBResult =
-//     match lynxRow.plan_plan_date with
+// let getPlanDate (oib7Row: Quarterly7OBReportQueryRow) : OIBResult =
+//     match oib7Row.plan_plan_date with
 //     | Some date ->
 //         Ok (PlanDate date)
 //     | None ->
 //         Error "No plan date in LYNX."
 
-let getPlanModified (lynxRow: LynxRow) : OIBResult =
-    match lynxRow.plan_modified with
+let getPlanModified (oib7Row: Quarterly7OBReportQueryRow) : OIBResult =
+    match oib7Row.plan_modified with
     | Some date ->
         Ok (PlanModified date)
     | None ->
         Error "LYNX: plan.modified is NULL."
 
-let mapToServicesRow (lynxRow: LynxRow) : OIBRow =
+let mapToServicesRow (oib7Row: Quarterly7OBReportQueryRow) : OIBRow =
     [
-      ( "_", getPlanModified lynxRow)
-    //   ( "_", getPlanDate lynxRow )
-    // ; ( "_", (Ok (PlanId lynxRow.plan_id)))
+      ( "_", getPlanModified oib7Row)
+    //   ( "_", getPlanDate oib7Row )
+    // ; ( "_", (Ok (PlanId oib7Row.plan_id)))
         // ------------------------------
       // TODO Ask what is with these rows
     ; ( "B", (Ok No)) // VisionAssessment
     ; ( "C", (Ok No)) // SurgicalOrTherapeuticTreatment
       // --------------------------------
-    ; ( "D", boolOptsToResultYesNo [ lynxRow.note_at_devices; lynxRow.note_at_services ] )
-    ; ( "E", getColumnCached typeof<AssistiveTechnologyGoalOutcomes> None lynxRow.plan_at_outcomes )
-    ; ( "J", boolOptsToResultYesNo [ lynxRow.note_orientation ] )
-    ; ( "K", boolOptsToResultYesNo [ lynxRow.note_communications] )
-    ; ( "L", boolOptsToResultYesNo [ lynxRow.note_dls] )
-    ; ( "M", boolOptsToResultYesNo [ lynxRow.note_advocacy] )
-    ; ( "N", boolOptsToResultYesNo [ lynxRow.note_counseling ] )
-    ; ( "O", boolOptsToResultYesNo [ lynxRow.note_information ] )
-    ; ( "P", boolOptsToResultYesNo [ lynxRow.note_services ] )
-    ; ( "Q", getColumnCached typeof<IndependentLivingAndAdjustmentOutcomes> None lynxRow.plan_ila_outcomes )
-    ; ( "U", boolOptsToResultYesNo [ lynxRow.note_support ] )
+    ; ( "D", boolOptsToResultYesNo [ oib7Row.note_at_devices; oib7Row.note_at_services ] )
+    ; ( "E", getColumnCached typeof<AssistiveTechnologyGoalOutcomes> None oib7Row.plan_at_outcomes )
+    ; ( "J", boolOptsToResultYesNo [ oib7Row.note_orientation ] )
+    ; ( "K", boolOptsToResultYesNo [ oib7Row.note_communications] )
+    ; ( "L", boolOptsToResultYesNo [ oib7Row.note_dls] )
+    ; ( "M", boolOptsToResultYesNo [ oib7Row.note_advocacy] )
+    ; ( "N", boolOptsToResultYesNo [ oib7Row.note_counseling ] )
+    ; ( "O", boolOptsToResultYesNo [ oib7Row.note_information ] )
+    ; ( "P", boolOptsToResultYesNo [ oib7Row.note_services ] )
+    ; ( "Q", getColumnCached typeof<IndependentLivingAndAdjustmentOutcomes> None oib7Row.plan_ila_outcomes )
+    ; ( "U", boolOptsToResultYesNo [ oib7Row.note_support ] )
       // TODO "case_status_conundrum"
       //      `CaseStatus` affects `LivingSituationOutcomes` (column W) and `HomeAndCommunityInvolvementOutcomes` (column AA), so if it is always assumed to be `Assessed`, then there is no point in every mapping to `NotAssessed`.
     ; ( "V",  (Ok Assessed) ) // CaseStatus
-    ; ( "W",  getOutcomes lynxRow ) // LivingSituationOutcomes
-    ; ( "AA", getOutcomes lynxRow ) // HomeAndCommunityInvolvementOutcomes
+    ; ( "W",  getOutcomes oib7Row ) // LivingSituationOutcomes
+    ; ( "AA", getOutcomes oib7Row ) // HomeAndCommunityInvolvementOutcomes
       // TODO Add to LYNX first then here
-    // ; ( "AE", getColumnCached typeof<EmploymentOutcomes> None lynxRow.plan_employment_outcomes )
+    // ; ( "AE", getColumnCached typeof<EmploymentOutcomes> None oib7Row.plan_employment_outcomes )
     ]
 
 // To distinguish it from the `OIBRow` (= `OIBColumn list`) type.
@@ -704,7 +715,7 @@ let mergeOIBColumns
         | :? IOIBOutcome ->
             (colNameA, okA)
 
-let getServices (lynxData: LynxData) : OIBSheetData =
+let getServices (lynxData: OIBQuarterlyReportData) : OIBSheetData =
     lynxData
     |> getTabData mapToServicesRow
     |> Seq.map (fun ((_clientName, oibRows): ClientOIBRows) ->
@@ -809,6 +820,26 @@ let checkATServicesAndOutcome (row: OIBRow) : OIBRow =
         | _ -> []
 
     replaceColumns row replacementColumns
+
+let generate7OBreport
+    (connectionString: string)
+    (year: int)
+    (quarter: Quarter)
+    // (templatePath: string)
+    (reportPath: string)
+    : unit
+    =
+
+    let ob7Data: OIBQuarterlyReportData =
+        quarterly7OBReportQuery connectionString quarter year
+
+    // hard-coding it for now as it is not expected to change
+    let templatePath = "templates/20231011_protected_7-OB_Report-Data-Collection-Tool_V2.xlsx"
+
+    openExcelFileWithNPOI templatePath
+    |> populateSheet (getDemographics ob7Data) 3
+    |> populateSheet (getServices ob7Data) 4
+    |> saveWorkbook reportPath
 
 // TODO add functions to achieve the same as the fsi commands below, and make constraint checks pluggable as in the last comment block.
 

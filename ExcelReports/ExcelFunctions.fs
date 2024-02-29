@@ -116,7 +116,7 @@ let updateCell (cell: ICell) (string: string) =
 let recalculateFormulas (workbook: XSSFWorkbook) =
     workbook.GetCreationHelper().CreateFormulaEvaluator().EvaluateAll()
 
-let saveWorkbook (workbook: XSSFWorkbook) (filePath: string) =
+let saveWorkbook (filePath: string) (workbook: XSSFWorkbook) =
     recalculateFormulas workbook
     use fileStream: System.IO.FileStream =
         new System.IO.FileStream(
