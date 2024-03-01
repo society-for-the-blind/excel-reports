@@ -165,7 +165,7 @@ let buildQueryColumns<'T when 'T :> ISQLQueryColumnable>
     |> String.concat ", "
 
 // see TODO 2024-02-19_1348 rename_lynx_prefix_oib_report
-type Quarterly7OBReportQueryRow =
+type QuarterlyReportQueryRow =
 // type LynxRow =
     {
         // NOTE 2023-12-14_1221 Why are most record fields options?
@@ -324,7 +324,7 @@ type AssignmentQueryRow =
 //     }
 
 // see TODO 2024-02-19_1348 rename_lynx_prefix_oib_report
-// type Quarterly7OBReportQuery = Quarterly7OBReportQueryRow list
+// type Quarterly7OBReportQuery = QuarterlyReportQueryRow list
 
 // TODO there are two quarterly reports (7OB and non-7OB), so this type should accomodate both
 type OIBQuarterlyReportData = {
@@ -339,6 +339,14 @@ type Quarter =
     | Q2
     | Q3
     | Q4
+
+    interface IOIBString with
+        member this.ToOIBString () =
+            match this with
+            | Q1 -> "Q1"
+            | Q2 -> "Q2"
+            | Q3 -> "Q3"
+            | Q4 -> "Q4"
 
 type RowReaderBuilder =
     LynxQueryRowSpecification -> SqlAliases -> RowReader -> ISQLQueryColumnable
@@ -506,9 +514,14 @@ let quarterToStartAndEndDates (q: Quarter) (grantYear: int) =
     , startDate.AddMonths(3).AddDays(-1)
     )
 
+type QuarterlyOIBReportType =
+    | OIB_7OB
+    | OIB_Non7OB
+
 // TODO There is also a non-7OB report, so this function should be generalized to support both (either by splitting out the generic parts or by adding an extra parameter; all the non-7OB parts in LYNX are the same as the 7OB ones but containing the "1854" label somewhere).
-let quarterly7OBReportQuery
+let quarterlyReportQuery
     (connectionString: string)
+    (reportType: QuarterlyOIBReportType)
     (quarter: Quarter)
     (grantYear: int)
     : OIBQuarterlyReportData
@@ -522,12 +535,15 @@ let quarterly7OBReportQuery
     let quarterStart : DateOnly = grantYearStart
     let quarterEnd   : DateOnly = quarterToStartAndEndDates quarter grantYear |> snd
 
+    let is7OB: bool = reportType = OIB_7OB
+    let noteTable = if is7OB then "lynx_sipnote" else "lynx_sip1854note"
+    let planTable = if is7OB then "lynx_sipplan" else "lynx_sip1854plan"
 
     let joins =
-        """
-            lynx_sipnote AS note
+        $"""
+             {noteTable}  AS note
         JOIN lynx_contact AS contact ON    note.contact_id = contact.id
-        JOIN lynx_sipplan AS plan    ON   note.sip_plan_id = plan.id
+        JOIN {planTable}  AS plan    ON   note.sip_plan_id = plan.id
         JOIN lynx_intake  AS intake  ON  intake.contact_id = contact.id
         JOIN (
             SELECT address.id, address.contact_id, address.modified, address.county
@@ -550,7 +566,7 @@ let quarterly7OBReportQuery
     // let groupByClause = "GROUP BY " + queryColumns
     // let orderByClause = "ORDER BY CONCAT(c.last_name, ', ', c.first_name)"
 
-    queryBuilder<Quarterly7OBReportQueryRow>
+    queryBuilder<QuarterlyReportQueryRow>
         { connectionString = connectionString
         ; sqlQueryStringAfterFROM = joins + whereClause
         ; sqlAliases =

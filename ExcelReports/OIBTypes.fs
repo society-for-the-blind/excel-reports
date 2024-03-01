@@ -58,6 +58,10 @@ type IndividualsServed =
 //     ("C2", "Case open between Oct. 1 - Sept. 30")])
 
 type AgeAtApplication =
+    | AgeBracket18To24
+    | AgeBracket25To34
+    | AgeBracket35To44
+    | AgeBracket45To54
     | AgeBracket55To64
     | AgeBracket65To74
     | AgeBracket75To84
@@ -66,6 +70,10 @@ type AgeAtApplication =
     interface IOIBString with
         member this.ToOIBString() =
             match this with
+            | AgeBracket18To24 -> "18-24"
+            | AgeBracket25To34 -> "25-34"
+            | AgeBracket35To44 -> "35-44"
+            | AgeBracket45To54 -> "45-54"
             | AgeBracket55To64 -> "55-64"
             | AgeBracket65To74 -> "65-74"
             | AgeBracket75To84 -> "75-84"
