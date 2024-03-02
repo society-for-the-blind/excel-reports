@@ -306,6 +306,7 @@ type AssignmentQueryRow =
         assignedby_last_name         : string option;
         assignedby_first_name        : string option;
         assignment_assignment_status : string option;
+        assignment_assignment_date   : System.DateTime option;
     }
 
     interface ISQLQueryColumnable with
@@ -340,8 +341,8 @@ type Quarter =
     | Q3
     | Q4
 
-    interface IOIBString with
-        member this.ToOIBString () =
+    interface IStringable with
+        member this.Stringify () =
             match this with
             | Q1 -> "Q1"
             | Q2 -> "Q2"
@@ -476,14 +477,19 @@ let queryBuilder<'T when 'T :> ISQLQueryColumnable>
     |> Sql.query queryString
     |> Sql.execute ( rowReaderBuilder<'T> args.sqlAliases )
 
+type QuarterlyOIBReportType =
+    | OIB_7OB
+    | OIB_Non7OB
+
 let assignmentReportQuery
     (connectionString: string)
+    (reportType: QuarterlyOIBReportType)
     : ISQLQueryColumnable list
     =
 
     let sqlQueryStringAfterFROM =
-        """
-             lynx_assignment AS assignment
+        $"""
+             lynx_{if (reportType = OIB_7OB) then "" else "sip1854"}assignment AS assignment
         JOIN lynx_contact    AS contact    ON    contact.id = assignment.contact_id
         JOIN auth_user       AS instructor ON instructor.id = assignment.instructor_id
         JOIN auth_user       AS assignedby ON assignedby.id = assignment.user_id
@@ -493,11 +499,11 @@ let assignmentReportQuery
         { connectionString = connectionString
         ; sqlQueryStringAfterFROM = sqlQueryStringAfterFROM
         ; sqlAliases =
-            [ "contact_last_name"
+            [  "contact_last_name"
             ; "contact_first_name"
-            ; "instructor_last_name"
+            ;  "instructor_last_name"
             ; "instructor_first_name"
-            ; "assignedby_last_name"
+            ;  "assignedby_last_name"
             ; "assignedby_first_name"
             ]
         }
@@ -513,10 +519,6 @@ let quarterToStartAndEndDates (q: Quarter) (grantYear: int) =
     ( startDate
     , startDate.AddMonths(3).AddDays(-1)
     )
-
-type QuarterlyOIBReportType =
-    | OIB_7OB
-    | OIB_Non7OB
 
 // TODO There is also a non-7OB report, so this function should be generalized to support both (either by splitting out the generic parts or by adding an extra parameter; all the non-7OB parts in LYNX are the same as the 7OB ones but containing the "1854" label somewhere).
 let quarterlyReportQuery

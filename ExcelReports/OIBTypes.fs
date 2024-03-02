@@ -17,28 +17,28 @@ open ExcelReports.OIBTypes;;
 //     FSharpType.GetUnionCases(typeof<'T>)
 //     |> Array.map (fun caseInfo -> caseInfo.Name)
 
-type IOIBString =
-    abstract member ToOIBString: unit -> string
+type IStringable =
+    abstract member Stringify: unit -> string
 
 type YesOrNo =
     | Yes
     | No
 
-    // Implement IOIBString interface for yesOrNo
-    interface IOIBString with
-        member this.ToOIBString() =
+    // Implement IStringable interface for yesOrNo
+    interface IStringable with
+        member this.Stringify() =
             match this with
             | Yes -> "Yes"
             | No  -> "No"
 
-let toOIBString (value: IOIBString) =
-    value.ToOIBString ()
+let stringify (value: IStringable) =
+    value.Stringify ()
 
 type ClientName =
 | ClientName of string
 
-    interface IOIBString with
-        member this.ToOIBString() =
+    interface IStringable with
+        member this.Stringify() =
             match this with
             | ClientName name -> name
 
@@ -48,8 +48,8 @@ type IndividualsServed =
     | NewCase
     | PriorCase
 
-    interface IOIBString with
-        member this.ToOIBString() =
+    interface IStringable with
+        member this.Stringify() =
             match this with
             | NewCase   -> "Case open between Oct. 1 - Sept. 30"
             | PriorCase -> "Case open prior to Oct. 1"
@@ -67,8 +67,8 @@ type AgeAtApplication =
     | AgeBracket75To84
     | AgeBracket85AndOlder
 
-    interface IOIBString with
-        member this.ToOIBString() =
+    interface IStringable with
+        member this.Stringify() =
             match this with
             | AgeBracket18To24 -> "18-24"
             | AgeBracket25To34 -> "25-34"
@@ -86,9 +86,9 @@ type Gender =
     | Male
     | DidNotSelfIdentifyGender
 
-    // Implement IOIBString interface for Gender
-    interface IOIBString with
-        member this.ToOIBString() =
+    // Implement IStringable interface for Gender
+    interface IStringable with
+        member this.Stringify() =
             match this with
             | Female                   -> "Female"
             | Male                     -> "Male"
@@ -105,9 +105,9 @@ type Race =
     | DidNotSelfIdentifyRace
     | TwoOrMoreRaces
 
-    // Implement IOIBString interface for Race
-    interface IOIBString with
-        member this.ToOIBString() =
+    // Implement IStringable interface for Race
+    interface IStringable with
+        member this.Stringify() =
             match this with
             | NativeAmerican                  -> "American Indian or Alaska Native"
             | Asian                           -> "Asian"
@@ -131,9 +131,9 @@ type DegreeOfVisualImpairment =
     | LegallyBlind
     | SevereVisionImpairment
 
-    // Implement IOIBString interface for DegreeOfVisualImpairment
-    interface IOIBString with
-        member this.ToOIBString() =
+    // Implement IStringable interface for DegreeOfVisualImpairment
+    interface IStringable with
+        member this.Stringify() =
             match this with
             | TotallyBlind -> "Totally Blind"
             | LegallyBlind -> "Legally Blind"
@@ -149,9 +149,9 @@ type MajorCauseOfVisualImpairment =
     | Cataracts
     | OtherCausesOfVisualImpairment
 
-    // Implement IOIBString interface for MajorCauseOfVisualImpairment
-    interface IOIBString with
-        member this.ToOIBString() =
+    // Implement IStringable interface for MajorCauseOfVisualImpairment
+    interface IStringable with
+        member this.Stringify() =
             match this with
             | MacularDegeneration           -> "Macular Degeneration"
             | DiabeticRetinopathy           -> "Diabetic Retinopathy"
@@ -192,9 +192,9 @@ type TypeOfResidence =
     | NursingHome
     | Homeless
 
-    // Implement IOIBString interface for TypeOfResidence
-    interface IOIBString with
-        member this.ToOIBString() =
+    // Implement IStringable interface for TypeOfResidence
+    interface IStringable with
+        member this.Stringify() =
             match this with
             | PrivateResidence          -> "Private Residence"
             | SeniorIndependentLiving   -> "Senior Independent Living"
@@ -221,9 +221,9 @@ type SourceOfReferral =
     | SelfReferral
     | Other
 
-// Implement IOIBString interface for SourceOfReferral
-    interface IOIBString with
-        member this.ToOIBString() =
+// Implement IStringable interface for SourceOfReferral
+    interface IStringable with
+        member this.Stringify() =
             match this with
             | EyeCareProvider           -> "Eye Care Provider"
             | PhysicianMedicalProvider  -> "Physician/ Medical Provider"
@@ -260,8 +260,8 @@ type County =
     | Sutter        | Tehama       | Trinity      | Tulare     | Tuolumne
     | Ventura       | Yolo         | Yuba
 
-    interface IOIBString with
-        member this.ToOIBString() =
+    interface IStringable with
+        member this.Stringify() =
             match this with
             | ContraCosta    -> "Contra Costa"
             | DelNorte       -> "Del Norte"
@@ -363,24 +363,24 @@ type County =
 // type PlanDate =
 //     | PlanDate of System.DateOnly
 
-//     interface IOIBString with
-//         member this.ToOIBString() =
+//     interface IStringable with
+//         member this.Stringify() =
 //             match this with
 //             | PlanDate date -> date.ToString()
 
 // type PlanId =
 //     | PlanId of int
 
-//     interface IOIBString with
-//         member this.ToOIBString() =
+//     interface IStringable with
+//         member this.Stringify() =
 //             match this with
 //             | PlanId id -> string(id)
 
 type PlanModified =
     | PlanModified of System.DateTime
 
-    interface IOIBString with
-        member this.ToOIBString() =
+    interface IStringable with
+        member this.Stringify() =
             match this with
             | PlanModified dt -> dt.ToString()
 
@@ -400,8 +400,8 @@ type OutcomeA =
     | AssessedAndMaintainedIndependence
     | AssessedWithDecreasedIndependence
 
-    interface IOIBString with
-        member this.ToOIBString() =
+    interface IStringable with
+        member this.Stringify() =
             match this with
             | NotAssessed                        -> "Not assessed"
             | AssessedWithImprovedIndependence   -> "Assessed with improved independence"
@@ -470,8 +470,8 @@ type CaseStatus = // "V7"
     | Assessed
     | Pending
 
-    interface IOIBString with
-        member this.ToOIBString() =
+    interface IStringable with
+        member this.Stringify() =
             match this with
             | Assessed   -> "Assessed"
             | Pending -> "Pending"
@@ -482,8 +482,8 @@ type OutcomeB =
     | Decreased
     | NotAssessed
 
-    interface IOIBString with
-        member this.ToOIBString() =
+    interface IStringable with
+        member this.Stringify() =
             match this with
             | Increased -> "Increased"
             | Maintained -> "Maintained"
@@ -502,8 +502,8 @@ type EmploymentOutcomes = // "AE7:AH7"
     | Unsure
     | MoreLikely
 
-    interface IOIBString with
-        member this.ToOIBString() =
+    interface IStringable with
+        member this.Stringify() =
             match this with
             | NotInterested -> "Not Interested"
             | LessLikely -> "Less Likely"
