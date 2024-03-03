@@ -594,6 +594,9 @@ type EmploymentOutcomes = // "AE7:AH7"
     | Unsure
     | MoreLikely
 
+    interface IOIBOutcome with
+        member this.outcome () = ()
+
     interface IOIBType with
         member this.isOIBType() = ()
 

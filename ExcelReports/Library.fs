@@ -17,7 +17,7 @@ open ExcelReports.OIB;;
 
 -- oneliner:
 fsi.ShowDeclarationValues <- false;;
- #r "nuget: NPOI, 2.6.2";; #load "ExcelReports/OIBTypes.fs";; open ExcelReports.OIBTypes;; #load "ExcelReports/ExcelFunctions.fs";; open ExcelReports.ExcelFunctions;; #r "nuget: Npgsql.FSharp, 5.7.0";; #load "ExcelReports/LynxData.fs";; open ExcelReports.LynxData;; #load "ExcelReports/Library.fs";; open ExcelReports.OIB;;
+#r "nuget: NPOI, 2.6.2";; #load "ExcelReports/OIBTypes.fs";; open ExcelReports.OIBTypes;; #load "ExcelReports/ExcelFunctions.fs";; open ExcelReports.ExcelFunctions;; #r "nuget: Npgsql.FSharp, 5.7.0";; #load "ExcelReports/LynxData.fs";; open ExcelReports.LynxData;; #load "ExcelReports/Library.fs";; open ExcelReports.OIB;;
 
 let conn2 = "postgres://postgres:password@192.168.64.4:5432/lynx";;
 
@@ -26,6 +26,8 @@ generateQuarterlyReport conn2 OIB_Non7OB 2023 Q2 "dev";;
 
 generateQuarterlyReport conn  OIB_Non7OB 2023 Q2 "prod";;
 generateQuarterlyReport conn  OIB_7OB    2023 Q2 "prod";;
+
+let q = quarterlyReportQuery conn OIB_7OB Q2 2023;;
 *)
 
 open ExcelFunctions
@@ -605,6 +607,16 @@ let getOutcomes (row: QuarterlyReportQueryRow) : OIBReportParseResult =
         Error $"Outcome needs to be set in LYNX or 'Case Status' (column V) needs to be 'Pending'."
     // Why no `NotAssessed`? See `case_status_conundrum` TODO below.
 
+let getEmploymentOutcome (row: QuarterlyReportQueryRow) : OIBReportParseResult =
+    let raceType = typeof<EmploymentOutcomes>
+    match row.plan_employment_outcomes with
+    | Some "Not Interested in Employment"    -> Ok NotInterested
+    | Some "Less Likely to Seek Employment"  -> Ok LessLikely
+    | Some "Unsure about Seeking Employment" -> Ok Unsure
+    | Some "More Likely to Seek Employment"  -> Ok MoreLikely
+    // This should never happen, but can't hurt.
+    | OIBCase raceType None result -> result
+
 // let getPlanDate (row: QuarterlyReportQueryRow) : OIBReportParseResult =
 //     match row.plan_plan_date with
 //     | Some date ->
@@ -646,7 +658,7 @@ let mapToServicesRow (row: QuarterlyReportQueryRow) : OIBReportRow =
     ; ( "W",  getOutcomes row ) // LivingSituationOutcomes
     ; ( "AA", getOutcomes row ) // HomeAndCommunityInvolvementOutcomes
       // TODO Add to LYNX first then here
-    // ; ( "AE", getColumnCached typeof<EmploymentOutcomes> None row.plan_employment_outcomes )
+    ; ( "AE", getEmploymentOutcome row )
     ]
 
 // To distinguish it from the `ReportRow` (= `ReportColumn list`) type.

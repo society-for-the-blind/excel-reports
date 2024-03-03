@@ -269,6 +269,7 @@ type QuarterlyReportQueryRow =
         plan_at_outcomes             : string option;
         plan_community_plan_progress : string option;
         plan_ila_outcomes            : string option;
+        plan_employment_outcomes     : string option;
         plan_living_plan_progress    : string option;
         plan_plan_date               : System.DateOnly option;
         plan_modified                : System.DateTime option;
