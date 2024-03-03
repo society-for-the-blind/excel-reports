@@ -341,8 +341,8 @@ type Quarter =
     | Q3
     | Q4
 
-    interface IStringable with
-        member this.Stringify () =
+    interface System.IFormattable with
+        member this.ToString(_format: string, _formatProvider: System.IFormatProvider) =
             match this with
             | Q1 -> "Q1"
             | Q2 -> "Q2"

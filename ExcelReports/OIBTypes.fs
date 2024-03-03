@@ -1,5 +1,7 @@
 module ExcelReports.OIBTypes
 
+// TODO rename to `OIBReportTypes`
+
 (*
 #load "ExcelReports/OIBTypes.fs";;
 open ExcelReports.OIBTypes;;
@@ -17,28 +19,36 @@ open ExcelReports.OIBTypes;;
 //     FSharpType.GetUnionCases(typeof<'T>)
 //     |> Array.map (fun caseInfo -> caseInfo.Name)
 
-type IStringable =
-    abstract member Stringify: unit -> string
+type IOIBType =
+    abstract member isOIBType: unit -> unit
+
+type OIBReportParseResult = Result<IOIBType, string>
+type OIBReportColumn = string * OIBReportParseResult
+type OIBReportRow = OIBReportColumn list
+type OIBReportSheetData = OIBReportRow seq
 
 type YesOrNo =
     | Yes
     | No
 
-    // Implement IStringable interface for yesOrNo
-    interface IStringable with
-        member this.Stringify() =
+    // Implement IOIBType interface for yesOrNo
+    interface IOIBType with
+        member this.isOIBType() = ()
+
+    interface System.IFormattable with
+        member this.ToString(_format: string, _formatProvider: System.IFormatProvider) =
             match this with
             | Yes -> "Yes"
             | No  -> "No"
 
-let stringify (value: IStringable) =
-    value.Stringify ()
-
 type ClientName =
 | ClientName of string
 
-    interface IStringable with
-        member this.Stringify() =
+    interface IOIBType with
+        member this.isOIBType() = ()
+
+    interface System.IFormattable with
+        member this.ToString(_format: string, _formatProvider: System.IFormatProvider) =
             match this with
             | ClientName name -> name
 
@@ -48,8 +58,11 @@ type IndividualsServed =
     | NewCase
     | PriorCase
 
-    interface IStringable with
-        member this.Stringify() =
+    interface IOIBType with
+        member this.isOIBType() = ()
+
+    interface System.IFormattable with
+        member this.ToString(_format: string, _formatProvider: System.IFormatProvider) =
             match this with
             | NewCase   -> "Case open between Oct. 1 - Sept. 30"
             | PriorCase -> "Case open prior to Oct. 1"
@@ -67,8 +80,11 @@ type AgeAtApplication =
     | AgeBracket75To84
     | AgeBracket85AndOlder
 
-    interface IStringable with
-        member this.Stringify() =
+    interface IOIBType with
+        member this.isOIBType() = ()
+
+    interface System.IFormattable with
+        member this.ToString(_format: string, _formatProvider: System.IFormatProvider) =
             match this with
             | AgeBracket18To24 -> "18-24"
             | AgeBracket25To34 -> "25-34"
@@ -86,9 +102,12 @@ type Gender =
     | Male
     | DidNotSelfIdentifyGender
 
-    // Implement IStringable interface for Gender
-    interface IStringable with
-        member this.Stringify() =
+    // Implement IOIBType interface for Gender
+    interface IOIBType with
+        member this.isOIBType() = ()
+
+    interface System.IFormattable with
+        member this.ToString(_format: string, _formatProvider: System.IFormatProvider) =
             match this with
             | Female                   -> "Female"
             | Male                     -> "Male"
@@ -105,9 +124,12 @@ type Race =
     | DidNotSelfIdentifyRace
     | TwoOrMoreRaces
 
-    // Implement IStringable interface for Race
-    interface IStringable with
-        member this.Stringify() =
+    // Implement IOIBType interface for Race
+    interface IOIBType with
+        member this.isOIBType() = ()
+
+    interface System.IFormattable with
+        member this.ToString(_format: string, _formatProvider: System.IFormatProvider) =
             match this with
             | NativeAmerican                  -> "American Indian or Alaska Native"
             | Asian                           -> "Asian"
@@ -131,9 +153,12 @@ type DegreeOfVisualImpairment =
     | LegallyBlind
     | SevereVisionImpairment
 
-    // Implement IStringable interface for DegreeOfVisualImpairment
-    interface IStringable with
-        member this.Stringify() =
+    // Implement IOIBType interface for DegreeOfVisualImpairment
+    interface IOIBType with
+        member this.isOIBType() = ()
+
+    interface System.IFormattable with
+        member this.ToString(_format: string, _formatProvider: System.IFormatProvider) =
             match this with
             | TotallyBlind -> "Totally Blind"
             | LegallyBlind -> "Legally Blind"
@@ -149,9 +174,12 @@ type MajorCauseOfVisualImpairment =
     | Cataracts
     | OtherCausesOfVisualImpairment
 
-    // Implement IStringable interface for MajorCauseOfVisualImpairment
-    interface IStringable with
-        member this.Stringify() =
+    // Implement IOIBType interface for MajorCauseOfVisualImpairment
+    interface IOIBType with
+        member this.isOIBType() = ()
+
+    interface System.IFormattable with
+        member this.ToString(_format: string, _formatProvider: System.IFormatProvider) =
             match this with
             | MacularDegeneration           -> "Macular Degeneration"
             | DiabeticRetinopathy           -> "Diabetic Retinopathy"
@@ -192,9 +220,12 @@ type TypeOfResidence =
     | NursingHome
     | Homeless
 
-    // Implement IStringable interface for TypeOfResidence
-    interface IStringable with
-        member this.Stringify() =
+    // Implement IOIBType interface for TypeOfResidence
+    interface IOIBType with
+        member this.isOIBType() = ()
+
+    interface System.IFormattable with
+        member this.ToString(_format: string, _formatProvider: System.IFormatProvider) =
             match this with
             | PrivateResidence          -> "Private Residence"
             | SeniorIndependentLiving   -> "Senior Independent Living"
@@ -221,9 +252,12 @@ type SourceOfReferral =
     | SelfReferral
     | Other
 
-// Implement IStringable interface for SourceOfReferral
-    interface IStringable with
-        member this.Stringify() =
+// Implement IOIBType interface for SourceOfReferral
+    interface IOIBType with
+        member this.isOIBType() = ()
+
+    interface System.IFormattable with
+        member this.ToString(_format: string, _formatProvider: System.IFormatProvider) =
             match this with
             | EyeCareProvider           -> "Eye Care Provider"
             | PhysicianMedicalProvider  -> "Physician/ Medical Provider"
@@ -260,8 +294,11 @@ type County =
     | Sutter        | Tehama       | Trinity      | Tulare     | Tuolumne
     | Ventura       | Yolo         | Yuba
 
-    interface IStringable with
-        member this.Stringify() =
+    interface IOIBType with
+        member this.isOIBType() = ()
+
+    interface System.IFormattable with
+        member this.ToString(_format: string, _formatProvider: System.IFormatProvider) =
             match this with
             | ContraCosta    -> "Contra Costa"
             | DelNorte       -> "Del Norte"
@@ -363,24 +400,27 @@ type County =
 // type PlanDate =
 //     | PlanDate of System.DateOnly
 
-//     interface IStringable with
-//         member this.Stringify() =
+//     interface IOIBType with
+//         member this.isOIBType() =
 //             match this with
 //             | PlanDate date -> date.ToString()
 
 // type PlanId =
 //     | PlanId of int
 
-//     interface IStringable with
-//         member this.Stringify() =
+//     interface IOIBType with
+//         member this.isOIBType() =
 //             match this with
 //             | PlanId id -> string(id)
 
 type PlanModified =
     | PlanModified of System.DateTime
 
-    interface IStringable with
-        member this.Stringify() =
+    interface IOIBType with
+        member this.isOIBType() = ()
+
+    interface System.IFormattable with
+        member this.ToString(_format: string, _formatProvider: System.IFormatProvider) =
             match this with
             | PlanModified dt -> dt.ToString()
 
@@ -400,8 +440,11 @@ type OutcomeA =
     | AssessedAndMaintainedIndependence
     | AssessedWithDecreasedIndependence
 
-    interface IStringable with
-        member this.Stringify() =
+    interface IOIBType with
+        member this.isOIBType() = ()
+
+    interface System.IFormattable with
+        member this.ToString(_format: string, _formatProvider: System.IFormatProvider) =
             match this with
             | NotAssessed                        -> "Not assessed"
             | AssessedWithImprovedIndependence   -> "Assessed with improved independence"
@@ -470,8 +513,11 @@ type CaseStatus = // "V7"
     | Assessed
     | Pending
 
-    interface IStringable with
-        member this.Stringify() =
+    interface IOIBType with
+        member this.isOIBType() = ()
+
+    interface System.IFormattable with
+        member this.ToString(_format: string, _formatProvider: System.IFormatProvider) =
             match this with
             | Assessed   -> "Assessed"
             | Pending -> "Pending"
@@ -482,8 +528,11 @@ type OutcomeB =
     | Decreased
     | NotAssessed
 
-    interface IStringable with
-        member this.Stringify() =
+    interface IOIBType with
+        member this.isOIBType() = ()
+
+    interface System.IFormattable with
+        member this.ToString(_format: string, _formatProvider: System.IFormatProvider) =
             match this with
             | Increased -> "Increased"
             | Maintained -> "Maintained"
@@ -502,8 +551,11 @@ type EmploymentOutcomes = // "AE7:AH7"
     | Unsure
     | MoreLikely
 
-    interface IStringable with
-        member this.Stringify() =
+    interface IOIBType with
+        member this.isOIBType() = ()
+
+    interface System.IFormattable with
+        member this.ToString(_format: string, _formatProvider: System.IFormatProvider) =
             match this with
             | NotInterested -> "Not Interested"
             | LessLikely -> "Less Likely"

@@ -25,8 +25,8 @@ type IndexedColors     = SS.UserModel.IndexedColors
 type FillPattern       = SS.UserModel.FillPattern
 
 type ColumnName = string
-type ParseResult = Result<IStringable, string>
-type ReportColumn = ColumnName * ParseResult
+type ReportCell = Result<System.IFormattable, string>
+type ReportColumn = ColumnName * ReportCell
 type ReportRow = ReportColumn list
 type ReportSheetData = ReportRow seq
 
@@ -158,10 +158,12 @@ let fillRow
     (cellTransforms: (NPOI.SS.UserModel.ICell -> unit) list)
     =
 
+    printfn "fillRow"
     let errorColor = hexStringToRGB "#ffc096"
     newRow
     |> Seq.iter (
         fun ((column, result): ReportColumn) ->
+            printfn "column: %s" column
             // let rowNum = string(i + 7)
             let cell = getCell workbook sheetNumber (column + rowNumber)
 
@@ -171,7 +173,7 @@ let fillRow
             let cellString =
                 match result with
                 | Ok reportValue ->
-                    stringify reportValue
+                    string reportValue
                 | Error str ->
                     changeCellColor cell errorColor
                     "Error: " + str
@@ -187,10 +189,12 @@ let populateSheet
     : XSSFWorkbook
     =
 
+    printfn "populateSheet"
     rows
     // |> Seq.sortBy extractClientName
     |> Seq.iteri (
         fun i row ->
+             printfn "populateSheet iteri"
              // TODO "sheet_start_row"
              //      The  numbe r 7  below  denotes  the  start  row from
              //      where  the  "rows"  is  `ReportSheetData`  need  to  be

@@ -18,8 +18,11 @@ open ExcelReports.OIB;;
 -- oneliner:
 #r "nuget: NPOI, 2.6.2";; #load "ExcelReports/OIBTypes.fs";; open ExcelReports.OIBTypes;; #load "ExcelReports/ExcelFunctions.fs";; open ExcelReports.ExcelFunctions;; #r "nuget: Npgsql.FSharp, 5.7.0";; #load "ExcelReports/LynxData.fs";; open ExcelReports.LynxData;; #load "ExcelReports/Library.fs";; open ExcelReports.OIB;;
 
-generate7OBreport conn 2023 Q2 "2023_Q2_OB7_prod_rev1.xlsx";;
-generate7OBreport conn 2023 Q1 "2023_Q1_OB7_prod_rev1.xlsx";;
+generateQuarterlyReport conn2 OIB_7OB    2023 Q2 "dev";;
+generateQuarterlyReport conn2 OIB_Non7OB 2023 Q2 "dev";;
+
+generateQuarterlyReport conn  OIB_Non7OB 2023 Q2 "prod";;
+generateQuarterlyReport conn  OIB_7OB    2023 Q2 "prod";;
 *)
 
 open ExcelFunctions
@@ -52,10 +55,10 @@ open FSharp.Reflection
 // TODO ok for now, but may need to be replaced with
 //      a more meaningful type
 type Client = string
-type ClientOIBRows = (Client * ReportRow seq)
+type ClientOIBRows = (Client * OIBReportRow seq)
 type OIBRowsGroupedAndOrderedByClientName = ClientOIBRows seq
 
-let getClientName (row: QuarterlyReportQueryRow): ParseResult =
+let getClientName (row: QuarterlyReportQueryRow): OIBReportParseResult =
     let middleName = Option.defaultValue "" row.contact_middle_name
     let firstAndLastNames =
         ( row.contact_last_name
@@ -72,7 +75,7 @@ let getClientName (row: QuarterlyReportQueryRow): ParseResult =
 let getIndividualsServed
     (row: QuarterlyReportQueryRow)
     (grantYearStart: System.DateOnly)
-    : ParseResult =
+    : OIBReportParseResult =
 
     match row.intake_intake_date with
     | None ->
@@ -88,7 +91,7 @@ let getAgeAtApplication
     (row: QuarterlyReportQueryRow)
     (reportType: QuarterlyOIBReportType)
     (grantYearEnd: System.DateOnly)
-    : ParseResult =
+    : OIBReportParseResult =
 
     match row.intake_birth_date with
     | None ->
@@ -135,10 +138,10 @@ let getAgeAtApplication
     Partial  active  pattern  for  converting  a  string
     from  a LYNX  database column  to a  case of  an OIB
     discriminated union type  in `OIBTypes.fs` (the type
-    argument  also  has  to implement  the  `IStringable`
+    argument  also  has  to implement  the  `IOIBType`
     interface).
 
-    Returns: on match -> IStringable
+    Returns: on match -> IOIBType
              no match -> string
 
     For example:
@@ -148,7 +151,7 @@ let getAgeAtApplication
 
         match "Female" with
         | OIBValue genderType matchedCaseIfAny ->
-            matchedCaseIfAny // : IStringable
+            matchedCaseIfAny // : IOIBType
         | other ->
             // other : string
             failwith $"Value '{other}' in Lynx is not a valid OIB Gender option."
@@ -177,17 +180,19 @@ let getAgeAtApplication
          not.)
 *)
 let (|OIBValue|_|)
-    (oibType: System.Type) // active pattern argument
-    (valueToMatch: string)
-    =
-
-    if (not <| typeof<IStringable>.IsAssignableFrom(oibType))
-    then failwith $"Type {oibType.FullName} does not implement the `IStringable` interface."
+    (oibType: System.Type) // ------*
+    (valueToMatch: string)       // |
+    : IOIBType option            // |
+    =                            // |
+                                 // V
+    // Only able to check it at runtime (AFAIK).
+    if (not <| typeof<IOIBType>.IsAssignableFrom(oibType))
+    then failwith $"Type {oibType.FullName} does not implement the `IOIBType` interface."
 
     let caseToTuples (caseInfo: UnionCaseInfo) =
         let unionCase =
-            FSharpValue.MakeUnion(caseInfo, [||]) :?> IStringable
-        ( (stringify unionCase)
+            FSharpValue.MakeUnion(caseInfo, [||]) :?> IOIBType
+        ( (string unionCase)
         , unionCase
         )
 
@@ -226,8 +231,10 @@ let (|OIBValue|_|)
 *)
 let (|OIBCase|)
     (oibType: System.Type)
-    (returnIfMatchFails: ParseResult option)
-    (valueToMatch: string option) =
+    (returnIfMatchFails: OIBReportParseResult option)
+    (valueToMatch: string option)
+    : OIBReportParseResult
+    =
 
     match valueToMatch with
     | Some v ->
@@ -245,13 +252,13 @@ let getUnionType (case: obj) =
     let caseType = case.GetType()
     FSharpType.GetUnionCases(caseType).[0].DeclaringType
 
-let getRace (row: QuarterlyReportQueryRow) : ParseResult =
+let getRace (row: QuarterlyReportQueryRow) : OIBReportParseResult =
     let raceType = typeof<Race>
     match row.intake_ethnicity with
     | Some "Two or More Races" -> Ok TwoOrMoreRaces
     | OIBCase raceType None result -> result
 
-let getEthnicity (row: QuarterlyReportQueryRow) : ParseResult =
+let getEthnicity (row: QuarterlyReportQueryRow) : OIBReportParseResult =
     // See HISTORICAL NOTEs 2023-12-10_2222 and
     // 2023-12-10_2232 in `getRace`.
     // -> FOLLOW-UP NOTE 2023-12-20_1156
@@ -273,7 +280,7 @@ let getEthnicity (row: QuarterlyReportQueryRow) : ParseResult =
     | (_, Some _)                    -> Ok No
     | (_, None)                      -> Ok No
 
-let getDegreeOfVisualImpairment (row: QuarterlyReportQueryRow) : ParseResult =
+let getDegreeOfVisualImpairment (row: QuarterlyReportQueryRow) : OIBReportParseResult =
     let degreeType = typeof<DegreeOfVisualImpairment>
     match row.intake_degree with
     // Historical LYNX options
@@ -293,10 +300,11 @@ let getDegreeOfVisualImpairment (row: QuarterlyReportQueryRow) : ParseResult =
 // === HELPERS
 let getColumn
     (columnType: System.Type)
-    (nonOIBDefault: ParseResult option)
+    (nonOIBDefault: OIBReportParseResult option)
     (lynxColumn: string option)
-    : ParseResult =
+    : OIBReportParseResult =
 
+    printfn "getColumn"
     // See NOTE "FS0025: Incomplete pattern match" warning above
     match lynxColumn with
     | OIBCase columnType nonOIBDefault result ->
@@ -310,16 +318,16 @@ let getColumn
 let cache =
     System.Collections.Concurrent.ConcurrentDictionary<
         ( System.Type
-        * Result<IStringable,string> option
+        * OIBReportParseResult option
         * string option
         )
-    , Result<IStringable,string>>()
+    , OIBReportParseResult>()
 
 let getColumnCached
     (columnType: System.Type)
-    (nonOIBDefault: ParseResult option)
+    (nonOIBDefault: OIBReportParseResult option)
     (lynxColumn: string option)
-    : ParseResult =
+    : OIBReportParseResult =
     let key = (columnType, nonOIBDefault, lynxColumn)
     match cache.TryGetValue(key) with
     | true, value -> value
@@ -328,7 +336,7 @@ let getColumnCached
         cache.[key] <- value
         value
 
-let boolOptsToResultYesNo (lynxColumns: bool option list) : ParseResult =
+let boolOptsToResultYesNo (lynxColumns: bool option list) : OIBReportParseResult =
 
     let optTrueOrNone = function
         | Some b -> b
@@ -390,14 +398,14 @@ let boolOptsToResultYesNo (lynxColumns: bool option list) : ParseResult =
 //   `row.intake_dexterity`       <->
 //
 // In the case of the first 3, the presence of a value is crucial. The rest of the OIB columns are computed from multiple LYNX fields, so they can get away with a few missing values, but if all are missing, then then a human has to look into what is happening.
-let getCognitiveImpairment (row: QuarterlyReportQueryRow) : ParseResult =
+let getCognitiveImpairment (row: QuarterlyReportQueryRow) : OIBReportParseResult =
     [ row.intake_alzheimers
     ; row.intake_learning_disability
     ; row.intake_memory_loss
     ]
     |> boolOptsToResultYesNo
 
-let getMentalHealthImpairment (row: QuarterlyReportQueryRow) : ParseResult =
+let getMentalHealthImpairment (row: QuarterlyReportQueryRow) : OIBReportParseResult =
     [ ( row.intake_mental_health
         |> Option.map (fun _ -> true)
       )
@@ -405,7 +413,7 @@ let getMentalHealthImpairment (row: QuarterlyReportQueryRow) : ParseResult =
     ]
     |> boolOptsToResultYesNo
 
-let getOtherImpairment (row: QuarterlyReportQueryRow) : ParseResult =
+let getOtherImpairment (row: QuarterlyReportQueryRow) : OIBReportParseResult =
     [ row.intake_geriatric
     ; row.intake_stroke
     ; row.intake_seizure
@@ -427,7 +435,7 @@ let getOtherImpairment (row: QuarterlyReportQueryRow) : ParseResult =
     ]
     |> boolOptsToResultYesNo
 
-let getTypeOfResidence (row: QuarterlyReportQueryRow) : ParseResult =
+let getTypeOfResidence (row: QuarterlyReportQueryRow) : OIBReportParseResult =
     let residenceType = typeof<TypeOfResidence>
     match row.intake_residence_type with
     // Historical LYNX options
@@ -440,7 +448,7 @@ let getTypeOfResidence (row: QuarterlyReportQueryRow) : ParseResult =
     | OIBCase residenceType None result ->
         result
 
-let getReferrer (row: QuarterlyReportQueryRow) : ParseResult =
+let getReferrer (row: QuarterlyReportQueryRow) : OIBReportParseResult =
     let referrerType = typeof<SourceOfReferral>
     match row.intake_referred_by with
     // Historical LYNX options
@@ -450,7 +458,7 @@ let getReferrer (row: QuarterlyReportQueryRow) : ParseResult =
 
 
 // ONLY DELETE AFTER THE HISTORICAL NOTE ARE MOVED TO THE DOCS!
-// let getRace (row: QuarterlyReportQueryRow) : ParseResult =
+// let getRace (row: QuarterlyReportQueryRow) : OIBReportParseResult =
 //     let raceType = typeof<Race>
 //     match row.intake_ethnicity with
 //       // HISTORICAL NOTE 2023-12-10_2222
@@ -481,9 +489,10 @@ let mapToDemographicsRow
     (grantYearStart: System.DateOnly)
     (grantYearEnd:   System.DateOnly)
     (row: QuarterlyReportQueryRow)
-    : ReportRow =
-    // let demoColumns =
-    [ ( "A", getClientName row )
+    : OIBReportRow =
+
+    printfn "mapToDemographicsRow"
+    [ ( "A", (getClientName row) )
     ; ( "B", getIndividualsServed row            grantYearStart )
     ; ( "E", getAgeAtApplication  row reportType grantYearEnd )
     ; ( "J", getColumnCached typeof<Gender> None row.intake_gender )
@@ -511,12 +520,12 @@ let groupLynxRowsByClientName (rows: QuarterlyReportQueryRow seq) =
     |> Seq.groupBy (
         fun row ->
             match (getClientName row) with
-            | Ok clientName -> stringify clientName
+            | Ok clientName -> string clientName
             | Error str -> str
         )
 
 let getTabData
-    (toOIBRows: QuarterlyReportQueryRow -> ReportRow )
+    (toOIBRows: QuarterlyReportQueryRow -> OIBReportRow )
     (lynxData: OIBQuarterlyReportData)
     : OIBRowsGroupedAndOrderedByClientName =
 
@@ -530,9 +539,26 @@ let getTabData
         |> fun oibRows -> (client, oibRows)
        )
 
+let toReportColumn
+    ( (colName: string
+      , result: OIBReportParseResult
+      ) : OIBReportColumn
+    )
+    : ReportColumn =
+
+    let convertedResult: ReportCell =
+        result
+        |> Result.map (fun x -> x :?> System.IFormattable)
+    (colName, convertedResult)
+
+let toReportRow (oibRow: OIBReportRow) : ReportRow =
+    oibRow
+    |> List.map toReportColumn
+
 let getDemographics
     (reportType: QuarterlyOIBReportType)
-    (lynxData: OIBQuarterlyReportData) : ReportSheetData
+    (lynxData: OIBQuarterlyReportData)
+    : ReportSheetData
     =
 
     lynxData
@@ -544,6 +570,7 @@ let getDemographics
         )
     |> Seq.map (fun ((_clientName, oibRows): ClientOIBRows) ->
         oibRows
+        |> Seq.map toReportRow
         |> Seq.distinct
         // All  `ReportRow`s   should  be the same  for a
         // given  client, so  if  this crashes,  it means  that
@@ -555,13 +582,16 @@ let getDemographics
         //      for a one element list.
         |> Seq.exactlyOne
     )
+    |> fun e ->
+        printfn "leaving getDemographics"
+        e
 
 // ---SERVICES---------------------------------------------------------
 
-// type ReportColumn = string * ParseResult
+// type ReportColumn = string * OIBReportParseResult
 // type ReportRow = ReportColumn list
 
-let getOutcomes (row: QuarterlyReportQueryRow) : ParseResult =
+let getOutcomes (row: QuarterlyReportQueryRow) : OIBReportParseResult =
     match row.plan_living_plan_progress with
     | Some "Plan complete, no difference in ability to maintain living situation" ->
         Ok Maintained
@@ -573,21 +603,21 @@ let getOutcomes (row: QuarterlyReportQueryRow) : ParseResult =
         Error $"Outcome needs to be set in LYNX or 'Case Status' (column V) needs to be 'Pending'."
     // Why no `NotAssessed`? See `case_status_conundrum` TODO below.
 
-// let getPlanDate (row: QuarterlyReportQueryRow) : ParseResult =
+// let getPlanDate (row: QuarterlyReportQueryRow) : OIBReportParseResult =
 //     match row.plan_plan_date with
 //     | Some date ->
 //         Ok (PlanDate date)
 //     | None ->
 //         Error "No plan date in LYNX."
 
-let getPlanModified (row: QuarterlyReportQueryRow) : ParseResult =
+let getPlanModified (row: QuarterlyReportQueryRow) : OIBReportParseResult =
     match row.plan_modified with
     | Some date ->
         Ok (PlanModified date)
     | None ->
         Error "LYNX: plan.modified is NULL."
 
-let mapToServicesRow (row: QuarterlyReportQueryRow) : ReportRow =
+let mapToServicesRow (row: QuarterlyReportQueryRow) : OIBReportRow =
     [
       ( "_", getPlanModified row)
     //   ( "_", getPlanDate row )
@@ -618,11 +648,11 @@ let mapToServicesRow (row: QuarterlyReportQueryRow) : ReportRow =
     ]
 
 // To distinguish it from the `ReportRow` (= `ReportColumn list`) type.
-type SameOIBColumns = ReportColumn seq
+type SameOIBColumns = OIBReportColumn seq
 
-let byPlanModified ((("_", planModifiedResult) :: _rest): ReportRow) =
+let byPlanModified ((("_", planModifiedResult) :: _rest): OIBReportRow) =
     match planModifiedResult with
-    | Ok (planModified: IStringable) ->
+    | Ok (planModified: IOIBType) ->
         let (PlanModified dateOnly) = (planModified :?> PlanModified)
         dateOnly
     | Error _ ->
@@ -635,9 +665,9 @@ let mergeServiceYesNoCells (yesNoA: YesOrNo) (yesNoB: YesOrNo) : YesOrNo =
     | (No, No) -> No
 
 let mergeOIBColumns
-    ((colNameA, resultA): ReportColumn)
-    ((colNameB, resultB): ReportColumn)
-    : ReportColumn =
+    ((colNameA, resultA): OIBReportColumn)
+    ((colNameB, resultB): OIBReportColumn)
+    : OIBReportColumn =
 
     // This should never happen, but doesn't hurt to check.
     if (colNameA <> colNameB) then failwith "Column names do not match."
@@ -651,7 +681,7 @@ let mergeOIBColumns
         then (colNameA, Error strA)
         else (colNameA, Error (strA + "; " + strB))
     | Ok oibTypeA as okA, Ok oibTypeB ->
-        // Both `IStringable`s should be the same type,
+        // Both `IOIBType`s should be the same type,
         // so doesn't matter which one.
         match (box oibTypeA) with
 
@@ -662,7 +692,7 @@ let mergeOIBColumns
             ((oibTypeA :?> YesOrNo)
             ,(oibTypeB :?> YesOrNo)
             )
-            ||> (mergeServiceYesNoCells) :> IStringable
+            ||> (mergeServiceYesNoCells) :> IOIBType
             |> Ok
             |> (fun x -> (colNameA, x))
 
@@ -679,11 +709,11 @@ let mergeOIBColumns
 let getServices (lynxData: OIBQuarterlyReportData) : ReportSheetData =
     lynxData
     |> getTabData mapToServicesRow
-    |> Seq.map (fun ((_clientName, oibRows): ClientOIBRows) ->
+    |> Seq.map (fun (_clientName: Client, oibRows: OIBReportRow seq) ->
         oibRows
         |> Seq.sortBy byPlanModified
         |> Seq.rev
-           // A client's many "service rows"  be "mushed" into one
+           // A client's many "service rows"  is "mushed" into one
            // row, this  way  each column can be specified a merge
            // strategy.
         |> Seq.transpose
@@ -692,9 +722,11 @@ let getServices (lynxData: OIBQuarterlyReportData) : ReportSheetData =
            // outcome columns (`IOIBOutcome`) ordered.
         |> fun (t: SameOIBColumns seq) -> t |> Seq.tail
         |> Seq.map (fun (t: SameOIBColumns) ->
-               Seq.reduce mergeOIBColumns t
+               t
+               |> Seq.reduce mergeOIBColumns
            )
         |> Seq.toList
+        |> toReportRow
     )
 
 (*
@@ -714,31 +746,31 @@ let getServices (lynxData: OIBQuarterlyReportData) : ReportSheetData =
     corrected,  then  the  this  condition  will  always
     stand.
 *)
-let checkATServicesAndOutcome (row: ReportRow) : ReportRow =
+let checkATServicesAndOutcome (row: OIBReportRow) : OIBReportRow =
 
     // Not  total  on  purpose:  it  should only  be called
     // with `Ok` `ParseResult`s; if  called with `Error` then
     // that is a bug.
     let okToError
         ( ( (letter: ColumnName)
-          , (Ok (oibType: IStringable): ParseResult)
-          ): ReportColumn
+          , (Ok (oibType: IOIBType): OIBReportParseResult)
+          ): OIBReportColumn
         )
-        : ReportColumn
+        : OIBReportColumn
         =
-        (letter, Error (stringify oibType))
+        (letter, Error (string oibType))
 
-    let findColumn (letter: ColumnName) (row: ReportRow) : ReportColumn =
+    let findColumn (letter: ColumnName) (row: OIBReportRow) : OIBReportColumn =
         row
         |> List.find (
                function
-               | ((letter': ColumnName, _): ReportColumn) -> letter = letter'
+               | ((letter': ColumnName, _): OIBReportColumn) -> letter = letter'
            )
 
     let replaceColumns
-        (row: ReportRow)
-        (replacements: ReportColumn list)
-        : ReportRow =
+        (row: OIBReportRow)
+        (replacements: OIBReportColumn list)
+        : OIBReportRow =
 
         let replacementLetters: ColumnName list =
             replacements |> List.map (fun (letter, _) -> letter)
@@ -749,7 +781,7 @@ let checkATServicesAndOutcome (row: ReportRow) : ReportRow =
         row
         |> List.map (
                function
-               | ((letter: ColumnName, _): ReportColumn) when needsReplacement(letter) ->
+               | ((letter: ColumnName, _): OIBReportColumn) when needsReplacement(letter) ->
                    findColumn letter replacements
                | otherColumn -> otherColumn
            )
@@ -766,14 +798,14 @@ let checkATServicesAndOutcome (row: ReportRow) : ReportRow =
         affectedColumns
         |> List.map snd
 
-    let replacementColumns : ReportColumn list =
+    let replacementColumns : OIBReportColumn list =
         match resultsToCompare with
         | [ Ok no; outcomeResult ]
-            when no = (No :> IStringable) ->
+            when no = (No :> IOIBType) ->
 
             match outcomeResult with
             | Ok outcome
-                when outcome = (NotAssessed :> IStringable) ->
+                when outcome = (NotAssessed :> IOIBType) ->
                 []
             | _ ->
                 affectedColumns
@@ -804,14 +836,15 @@ let generateQuarterlyReport
     let reportPath =
         sprintf "%d_%s_%s_%s_%s.xlsx"
             year
-            ((quarter :> IStringable).Stringify())
-            (reportType.ToString())
+            (string quarter)
+            (string reportType)
             oaDate
             outPathSuffix
 
     let cellTransforms =
         // Sometimes using a previously generated report as a template, and error highlights need to be cleared - except for "Case Status" (column V) as it has a "default" color set by DOR.
         // TODO: implement setting "Case Status" and not setting it to "Assessed" indiscriminately.
+        printfn "cellTransforms"
         [ fun (cell: NPOI.SS.UserModel.ICell) ->
             if (cell.Address.Column <> 21)
             then resetCellColor cell
@@ -821,6 +854,15 @@ let generateQuarterlyReport
     |> populateSheet (getDemographics reportType oibData) 3 7 cellTransforms
     |> populateSheet (getServices oibData) 4 7 cellTransforms
     |> saveWorkbook reportPath
+
+// let generateAssignmentReport
+//     (connectionString: string)
+//     : unit
+//     =
+
+//     let templatePath = "templates/lynx_assignment_report_v1.xlsx"
+
+//     openExcelFileWithNPOI templatePath
 
 // TODO add functions to achieve the same as the fsi commands below, and make constraint checks pluggable as in the last comment block.
 
