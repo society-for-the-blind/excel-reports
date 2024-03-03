@@ -385,6 +385,7 @@ let rowReaderBuilder<'T when 'T :> ISQLQueryColumnable>
     =
     // let getRecordFieldNamesAndTypes<'T when 'T :> ISQLQueryColumnable>
 
+    // printfn "rowReaderBuilder"
     let rowSpec: LynxQueryRowSpecification =
         getRecordFieldNamesAndTypes<'T>
 

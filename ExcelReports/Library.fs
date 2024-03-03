@@ -16,7 +16,10 @@ open ExcelReports.LynxData;;
 open ExcelReports.OIB;;
 
 -- oneliner:
-#r "nuget: NPOI, 2.6.2";; #load "ExcelReports/OIBTypes.fs";; open ExcelReports.OIBTypes;; #load "ExcelReports/ExcelFunctions.fs";; open ExcelReports.ExcelFunctions;; #r "nuget: Npgsql.FSharp, 5.7.0";; #load "ExcelReports/LynxData.fs";; open ExcelReports.LynxData;; #load "ExcelReports/Library.fs";; open ExcelReports.OIB;;
+fsi.ShowDeclarationValues <- false;;
+ #r "nuget: NPOI, 2.6.2";; #load "ExcelReports/OIBTypes.fs";; open ExcelReports.OIBTypes;; #load "ExcelReports/ExcelFunctions.fs";; open ExcelReports.ExcelFunctions;; #r "nuget: Npgsql.FSharp, 5.7.0";; #load "ExcelReports/LynxData.fs";; open ExcelReports.LynxData;; #load "ExcelReports/Library.fs";; open ExcelReports.OIB;;
+
+let conn2 = "postgres://postgres:password@192.168.64.4:5432/lynx";;
 
 generateQuarterlyReport conn2 OIB_7OB    2023 Q2 "dev";;
 generateQuarterlyReport conn2 OIB_Non7OB 2023 Q2 "dev";;
@@ -304,7 +307,6 @@ let getColumn
     (lynxColumn: string option)
     : OIBReportParseResult =
 
-    printfn "getColumn"
     // See NOTE "FS0025: Incomplete pattern match" warning above
     match lynxColumn with
     | OIBCase columnType nonOIBDefault result ->
@@ -491,8 +493,8 @@ let mapToDemographicsRow
     (row: QuarterlyReportQueryRow)
     : OIBReportRow =
 
-    printfn "mapToDemographicsRow"
-    [ ( "A", (getClientName row) )
+    [
+      ( "A", (getClientName row) )
     ; ( "B", getIndividualsServed row            grantYearStart )
     ; ( "E", getAgeAtApplication  row reportType grantYearEnd )
     ; ( "J", getColumnCached typeof<Gender> None row.intake_gender )
@@ -526,17 +528,20 @@ let groupLynxRowsByClientName (rows: QuarterlyReportQueryRow seq) =
 
 let getTabData
     (toOIBRows: QuarterlyReportQueryRow -> OIBReportRow )
-    (lynxData: OIBQuarterlyReportData)
+    (queryData: OIBQuarterlyReportData)
     : OIBRowsGroupedAndOrderedByClientName =
 
-    lynxData.lynxData
-    |> Seq.map (fun (row: ISQLQueryColumnable) -> row :?> QuarterlyReportQueryRow)
+    queryData.lynxData
+    |> Seq.map (fun (row: ISQLQueryColumnable) ->
+        row :?> QuarterlyReportQueryRow
+     )
     |> groupLynxRowsByClientName
     |> Seq.sortBy fst
     |> Seq.map (fun (client: Client, lynxRows) ->
         lynxRows
         |> Seq.map toOIBRows
-        |> fun oibRows -> (client, oibRows)
+        |> fun oibRows ->
+            (client, oibRows)
        )
 
 let toReportColumn
@@ -557,16 +562,16 @@ let toReportRow (oibRow: OIBReportRow) : ReportRow =
 
 let getDemographics
     (reportType: QuarterlyOIBReportType)
-    (lynxData: OIBQuarterlyReportData)
+    (queryData: OIBQuarterlyReportData)
     : ReportSheetData
     =
 
-    lynxData
+    queryData
     |> getTabData
         ( mapToDemographicsRow
             reportType
-            lynxData.grantYearStart
-            lynxData.grantYearEnd
+            queryData.grantYearStart
+            queryData.grantYearEnd
         )
     |> Seq.map (fun ((_clientName, oibRows): ClientOIBRows) ->
         oibRows
@@ -582,9 +587,6 @@ let getDemographics
         //      for a one element list.
         |> Seq.exactlyOne
     )
-    |> fun e ->
-        printfn "leaving getDemographics"
-        e
 
 // ---SERVICES---------------------------------------------------------
 
@@ -706,8 +708,8 @@ let mergeOIBColumns
         | :? IOIBOutcome ->
             (colNameA, okA)
 
-let getServices (lynxData: OIBQuarterlyReportData) : ReportSheetData =
-    lynxData
+let getServices (queryData: OIBQuarterlyReportData) : ReportSheetData =
+    queryData
     |> getTabData mapToServicesRow
     |> Seq.map (fun (_clientName: Client, oibRows: OIBReportRow seq) ->
         oibRows
@@ -844,7 +846,6 @@ let generateQuarterlyReport
     let cellTransforms =
         // Sometimes using a previously generated report as a template, and error highlights need to be cleared - except for "Case Status" (column V) as it has a "default" color set by DOR.
         // TODO: implement setting "Case Status" and not setting it to "Assessed" indiscriminately.
-        printfn "cellTransforms"
         [ fun (cell: NPOI.SS.UserModel.ICell) ->
             if (cell.Address.Column <> 21)
             then resetCellColor cell

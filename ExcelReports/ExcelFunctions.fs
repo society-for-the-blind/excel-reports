@@ -58,14 +58,11 @@ open System.Reflection
 
 let cloneCellStyle (cell: NPOI.XSSF.UserModel.XSSFCell)  =
     let original = cell.CellStyle
-    // printfn "ORIGINAL: %A" original.FontIndex
     let workbook = cell.Sheet.Workbook
     let copy = workbook.CreateCellStyle()
     let properties = original.GetType().GetProperties(BindingFlags.Public ||| BindingFlags.Instance)
     for prop in properties do
-        // printfn "MAIN: %s --- %A" prop.Name (prop.GetValue(original))
         if prop.CanRead && prop.CanWrite then
-            // printfn "IF: %s --- %A" prop.Name (prop.GetValue(original))
             let value = prop.GetValue(original)
             prop.SetValue(copy, value)
     // `FontIndex` can only be set by the `SetFont` method.
@@ -158,13 +155,10 @@ let fillRow
     (cellTransforms: (NPOI.SS.UserModel.ICell -> unit) list)
     =
 
-    printfn "fillRow"
     let errorColor = hexStringToRGB "#ffc096"
     newRow
     |> Seq.iter (
         fun ((column, result): ReportColumn) ->
-            printfn "column: %s" column
-            // let rowNum = string(i + 7)
             let cell = getCell workbook sheetNumber (column + rowNumber)
 
             // Some cells in a template require special care; see `generateQuarterlyReport` in `ExcelReports.fs`.
@@ -189,12 +183,10 @@ let populateSheet
     : XSSFWorkbook
     =
 
-    printfn "populateSheet"
     rows
     // |> Seq.sortBy extractClientName
     |> Seq.iteri (
         fun i row ->
-             printfn "populateSheet iteri"
              // TODO "sheet_start_row"
              //      The  numbe r 7  below  denotes  the  start  row from
              //      where  the  "rows"  is  `ReportSheetData`  need  to  be
