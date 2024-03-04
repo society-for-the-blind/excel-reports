@@ -16,8 +16,6 @@ open System.Reflection
 open Npgsql.FSharp
 open System.Text.RegularExpressions
 
-open OIBTypes
-
 let (|GetType|_|) (ct: Type) (t: Type) =
     match Regex("Option").Match(t.FullName).Success with
     | true ->
@@ -299,7 +297,7 @@ type QuarterlyReportQueryRow =
 *)
 type AssignmentQueryRow =
     {
-        assignment_id                : int;
+        assignment_id                :    int;
         contact_last_name            : string option;
         contact_first_name           : string option;
         instructor_last_name         : string option;
@@ -312,6 +310,16 @@ type AssignmentQueryRow =
 
     interface ISQLQueryColumnable with
         member this._ignore () = ()
+
+type GenericCellValue<'T> =
+    GenericCellValue of 'T
+
+        interface System.IFormattable with
+            member this.ToString(_format: string, _formatProvider: System.IFormatProvider) =
+                let (GenericCellValue value) = this
+                match (box value) with
+                | :? string as s -> s
+                | value -> string value
 
 // type LynxColumns =
 //     {
@@ -482,6 +490,12 @@ let queryBuilder<'T when 'T :> ISQLQueryColumnable>
 type QuarterlyOIBReportType =
     | OIB_7OB
     | OIB_Non7OB
+
+    interface System.IFormattable with
+        member this.ToString(_format: string, _formatProvider: System.IFormatProvider) =
+            match this with
+            | OIB_7OB -> "7OB"
+            | OIB_Non7OB -> "Non-7OB"
 
 let assignmentReportQuery
     (connectionString: string)

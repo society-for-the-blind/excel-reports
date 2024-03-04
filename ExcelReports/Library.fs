@@ -847,7 +847,7 @@ let generateQuarterlyReport
         else "templates/20231011_protected_Non-7-OB_Report-Data-Collection-Tool-for-under-OIB-age_V2.xlsx"
 
     let oaDate = System.DateTime.Now.ToOADate().ToString()
-    let reportPath =
+    let outPath =
         sprintf "%d_%s_%s_%s_%s.xlsx"
             year
             (string quarter)
@@ -866,16 +866,82 @@ let generateQuarterlyReport
     openExcelFileWithNPOI templatePath
     |> populateSheet (getDemographics reportType oibData) 3 7 cellTransforms
     |> populateSheet (getServices oibData) 4 7 cellTransforms
-    |> saveWorkbook reportPath
+    |> saveWorkbook outPath
 
-// let generateAssignmentReport
-//     (connectionString: string)
-//     : unit
-//     =
+let generateAssignmentReport
+    (connectionString: string)
+    (outPath: string)
+    : unit
+    =
 
-//     let templatePath = "templates/lynx_assignment_report_v1.xlsx"
+    let templatePath = "templates/lynx_assignment_report_v2.xlsx"
 
-//     openExcelFileWithNPOI templatePath
+    let query = assignmentReportQuery connectionString
+    let query7OB = query OIB_7OB
+    let queryNon7OB = query OIB_Non7OB
+
+    let optionToReportCell (opt: 'a option) : ReportCell =
+        match opt with
+        | Some x -> Ok (GenericCellValue x)
+        | None -> Error "Value not set in LYNX."
+
+    let concatOpts (opt1: string option) (opt2: string option) : string option =
+        Option.map2 (fun x y -> x + ", " + y) opt1 opt2
+
+    let clientName (row: AssignmentQueryRow) : string option =
+        concatOpts
+            row.contact_last_name
+            row.contact_first_name
+
+    let instructorName (row: AssignmentQueryRow) : string option=
+        concatOpts
+            row.instructor_last_name
+            row.instructor_first_name
+
+    let assignedByName (row: AssignmentQueryRow) : string option=
+        concatOpts
+            row.assignedby_last_name
+            row.assignedby_first_name
+
+    let toReportRow
+        (row: AssignmentQueryRow)
+        (sipType: QuarterlyOIBReportType)
+        : ReportRow
+        =
+
+        [
+          ( "A", Ok (GenericCellValue sipType))
+        ; ( "B", optionToReportCell row.assignment_assignment_date )
+        ; ( "C", optionToReportCell (clientName row) )
+        ; ( "D", optionToReportCell (instructorName row) )
+        ; ( "E", optionToReportCell (assignedByName row) )
+        ; ( "O", optionToReportCell row.assignment_assignment_status )
+        ]
+
+    let toSheetData
+        (sipType: QuarterlyOIBReportType)
+        (query: ISQLQueryColumnable list)
+        : ReportSheetData
+        =
+
+        query
+        |> Seq.map (fun row ->
+            toReportRow (row :?> AssignmentQueryRow) sipType
+        )
+
+    let assignmentSheetData =
+        toSheetData OIB_7OB query7OB
+        |> Seq.append (toSheetData OIB_Non7OB queryNon7OB)
+
+    // let addSIPType
+    //     (sipType: QuarterlyOIBReportType)
+    //     (query: ISQLQueryColumnable list)
+    //     :
+    //     =
+
+    openExcelFileWithNPOI templatePath
+    |> populateSheet assignmentSheetData 0 3 []
+    |> saveWorkbook outPath
 
 // TODO add functions to achieve the same as the fsi commands below, and make constraint checks pluggable as in the last comment block.
 
