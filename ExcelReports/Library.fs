@@ -874,7 +874,7 @@ let generateAssignmentReport
     : unit
     =
 
-    let templatePath = "templates/lynx_assignment_report_v2.xlsx"
+    let templatePath = "templates/lynx_assignment_report_v3.xlsx"
 
     let query = assignmentReportQuery connectionString
     let query7OB = query OIB_7OB
